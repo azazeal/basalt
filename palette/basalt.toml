@@ -1,0 +1,213 @@
+# basalt's palette. Every color the theme has is decided here.
+#
+# Nothing here is a hex. A color is a position: a lightness, an amount of color,
+# and for an accent a place on the wheel. Lightness runs 0 to 100 and is
+# perceptual, so two entries at one number look equally bright whatever their
+# color.
+
+# One accent-free ladder. What sits behind the file is darker than the file,
+# what sits on top of it is lighter, and that carries the layout: very little
+# in the theme needs a border to be read.
+#
+# NOTE(@azazeal): every step assumes it is drawn on a surface this file chose.
+# Content nobody chose is not a surface, so a lock screen's photograph or a
+# wallpaper under a translucent window has no step that survives it: for any
+# color there is an image that swallows it. Put a ground down first, the
+# deepest step at whatever alpha the port needs, and the ladder applies again
+# on top. Alpha is the port's to pick; it is a compositing decision.
+[surfaces]
+hue = 264.0
+
+# How much color the greys carry at their most. The curve is fixed and only its
+# height is set here: chroma follows a squared sine over the scale, so it peaks
+# mid-way and falls to nothing at both ends. A near-black cannot show a tint and
+# a near-white wearing one looks dirty.
+chroma = 0.042
+
+# The six surfaces are whole multiples of one unit of four lightness from the
+# page. Half a unit is the smallest step that still reads as a different
+# surface, which is what the two in-page marks get:
+#
+#   sunk   -1      page   0      inlay  +1/2
+#   row    +1      raised +2     lifted +3
+
+[[surfaces.step]]
+name = "sunk"
+lightness = 14.0
+note = "behind the page: panels, the tab strip, the bar's own ground"
+
+[[surfaces.step]]
+name = "page"
+lightness = 18.0
+note = "the file, and the window it is read in"
+
+[[surfaces.step]]
+name = "inlay"
+lightness = 20.0
+note = "in the window but not in the file: folds, hints, virtual text"
+
+[[surfaces.step]]
+name = "row"
+lightness = 22.0
+note = "the line the caret is on"
+
+[[surfaces.step]]
+name = "raised"
+lightness = 26.0
+note = "over the page: floats, popups, the status line, a bar chip"
+
+[[surfaces.step]]
+name = "lifted"
+lightness = 30.0
+note = "over the raised: a control sitting on a chip, a selected row"
+
+# The six marks are placed by contrast against the page, each half again the one
+# below it, anchored on ordinary text at 9.
+#
+# NOTE(@azazeal): none of them is "the border color" and asking for one is the
+# wrong question. A rule is only as visible as the surface under it: the same
+# step measures 2.25 on the page and 1.87 on a raised surface. Which step a rule
+# takes is the role layer's, against the ground it is actually drawn on.
+
+[[surfaces.step]]
+name = "guide"
+lightness = 42.5
+note = "the scrollbar thumb, listchars, a mark seen but not read"
+
+[[surfaces.step]]
+name = "faint"
+lightness = 50.4
+note = "line numbers, inactive labels, text that may go unread"
+
+[[surfaces.step]]
+name = "muted"
+lightness = 58.7
+note = "comments, untracked files, text that sits back"
+
+[[surfaces.step]]
+name = "dim"
+lightness = 67.3
+note = "secondary text that still has to be read"
+
+[[surfaces.step]]
+name = "body"
+lightness = 76.8
+note = "ordinary text"
+
+[[surfaces.step]]
+name = "bright"
+lightness = 87.1
+note = "text being emphasised, and text on a deep fill"
+
+# Each accent is placed on the wheel once and resolves to four renditions. A
+# fifth use, a bright fill with the deepest surface as its text, is `text`
+# again rather than a color of its own.
+#
+# NOTE(@azazeal): between lightness 49 and 58 nothing reads on a fill, dark text
+# and light alike. Anything filled with has to clear that band.
+[renditions]
+
+# Reads on any dark surface, and doubles as a bright fill.
+#
+# The cap does the work and the fraction is the fallback. How much color sRGB
+# holds varies by over two to one around the wheel, so a fraction alone would
+# make magenta twice the accent cyan is, and a flat amount alone would hold the
+# wheel down to what cyan can manage.
+text = { lightness = 74.0, chroma = 0.90, max = 0.160 }
+
+# Dark enough for bright text on it: a critical alert, a control that can cost
+# something. Capped for the same reason text is, and more so, since violet holds
+# three times the color cyan can at this lightness.
+deep = { lightness = 43.0, chroma = 0.85, max = 0.150 }
+
+# The ground under text that already has a color: a selection, the other copies
+# of what is selected, a diff hunk. It is looked through rather than at, so a
+# comment inside a selection stays a comment.
+#
+# It separates by hue, which is free, and spends lightness only where sRGB has
+# no hue left to sell. `clear` is how far it must end up from `against`;
+# `lightness` is where it starts, not where it ends. Red, orange, green and
+# magenta clear it on hue alone and never move; yellow, blue and cyan rise.
+#
+# NOTE(@azazeal): magenta and orange not moving is what earns the rule. Visual
+# is magenta and Select is orange, so a per-mode selection changes the hue and
+# nothing else: no foreground shifts by more than 0.39 of a contrast ratio.
+#
+# NOTE(@azazeal): if a wash is ever too faint the answer is a stronger wash and
+# never the container. Giving the copies the selection's own hue was tried and
+# said "another selection" rather than "the same text".
+wash = { lightness = 26.0, over = 0.070, clear = 0.085, against = "row" }
+
+# A tinted ground looked at rather than through: a strip, a badge, a nag bar's
+# fill. Ordinary text reads on it and the hue carries the meaning.
+#
+# `over` is how much more color it holds than a plain surface at the same
+# lightness, so it is guaranteed to out-tint the popup beside it. Measuring
+# against sRGB instead once produced a blue ground less saturated than the
+# untinted surface next to it.
+#
+# NOTE(@azazeal): containers sit at one lightness and an accent's lightness
+# override does not reach them. That is what keeps severity ordered: an error
+# ground and a warning ground weigh the same and differ only by hue.
+#
+# NOTE(@azazeal): cyan and blue fall short here and cannot be fixed from this
+# file, since sRGB has almost no dark teal. Where one has to read as a ground,
+# the role layer should give it a second signal.
+container = { lightness = 34.0, over = 0.040 }
+
+# Seven accents, one per thing the theme needs to say, none closer than 34
+# degrees. The notes say what an accent means, not where it is used.
+#
+# NOTE(@azazeal): seven is one more than a terminal can name. ANSI has six
+# colors and two greys, so a mapping onto those slots has orange left over.
+# Name it outright rather than smuggle it into the slot marked yellow: a
+# palette that answers "yellow" with an orange lies to every program that asks,
+# invisibly, until two consumers disagree.
+#
+# An accent may set its own text lightness, but only for a property of sRGB or
+# of vision. Three do, and each says which.
+#
+# There is no violet. It sat between blue and magenta, the only pair on the
+# wheel that ordinary color vision could confuse, and under the commonest color
+# blindness it and blue came out identical to four decimal places.
+
+[[accent]]
+name = "red"
+hue = 20.0
+lightness = 68.0
+note = "errors, deletions, danger"
+why = "a red at the common lightness cannot hold enough color to stay red, and reads pink"
+
+[[accent]]
+name = "orange"
+hue = 55.0
+note = "warnings, constants, destructive controls"
+
+[[accent]]
+name = "yellow"
+hue = 90.0
+lightness = 82.0
+note = "types, and what is changed but unsaved"
+why = "a yellow at the common lightness reads olive, because yellow is only yellow when it is light"
+
+[[accent]]
+name = "green"
+hue = 140.0
+lightness = 79.0
+note = "strings, additions, what has gone right"
+why = "lifted clear of red, since error against success is the one pair hue alone cannot carry"
+
+[[accent]]
+name = "cyan"
+hue = 200.0
+note = "escapes, links, macros: what points outside the code"
+
+[[accent]]
+name = "blue"
+hue = 250.0
+note = "functions, focus, what is being acted on"
+
+[[accent]]
+name = "magenta"
+hue = 322.0
+note = "keywords, and the selection"

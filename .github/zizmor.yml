@@ -1,0 +1,5 @@
+rules:
+  dangerous-triggers:
+    ignore:
+      # Needed for a writable token, and safe: it never checks the branch out.
+      - dependabot-auto-merge.yml

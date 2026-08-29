@@ -1,0 +1,118 @@
+#!/bin/sh
+#
+# Draws the palette and writes the two assets the README shows.
+#
+#   .github/scripts/screenshot
+#
+# Draws the palette rather than capturing it, so nothing here can drift from
+# the colors it claims to show. Writes basalt.json, assets/palette.svg and
+# assets/palette.png, and prints what it wrote.
+#
+# The PNG is gitignored: it comes out of whichever rasterizer the machine has
+# and no two agree byte for byte, so a committed copy would flip with whoever
+# ran this last. The JSON and SVG are committed and CI checks them.
+#
+# Wants Go, and one of rsvg-convert, resvg or Chromium for the PNG.
+
+set -eu
+
+prog=${0##*/}
+root=$(cd "$(dirname "$0")/../.." && pwd)
+
+die() {
+  printf '%s: %s\n' "$prog" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat >&2 <<EOF
+usage: $prog [-s]
+
+  -s  write the JSON and SVG only, and skip the PNG
+EOF
+  exit 2
+}
+
+svg_only=no
+while getopts sh opt; do
+  case $opt in
+    s) svg_only=yes ;;
+    *) usage ;;
+  esac
+done
+
+command -v go >/dev/null || die "Go is not installed"
+
+cd "$root"
+
+SVG=assets/palette.svg
+PNG=assets/palette.png
+DOC=basalt.json
+
+mkdir -p assets
+go run ./cmd/basalt -svg "$SVG" -json "$DOC" >/dev/null
+
+if [ "$svg_only" = yes ]; then
+  printf '%s\n%s\n' "$DOC" "$SVG"
+  exit 0
+fi
+
+# The canvas is read off the drawing, since the sheet grows as the palette does.
+#
+# NOTE(@azazeal): the drawing is one line with no trailing newline, so this
+# cannot be a `read`: read returns non-zero on input that does not end in a
+# newline, having assigned good values, and `set -e` then ends the script.
+dims=$(grep -o 'width="[0-9]*" height="[0-9]*"' "$SVG" | head -1 | grep -o '[0-9][0-9]*')
+W=$(printf '%s\n' "$dims" | sed -n 1p)
+H=$(printf '%s\n' "$dims" | sed -n 2p)
+
+[ -n "$W" ] || die "cannot read the sheet's size out of $SVG"
+[ -n "$H" ] || die "cannot read the sheet's size out of $SVG"
+
+# WARN(@azazeal): not ImageMagick. Its SVG renderer restarts every <tspan> at
+# the parent's x instead of advancing, so the code sample comes out as
+# overlapping words. It draws the swatches correctly, which hides the breakage.
+render() {
+  if command -v rsvg-convert >/dev/null; then
+    rsvg-convert -w "$W" -h "$H" -o "$PNG" "$SVG"
+    return 0
+  fi
+
+  if command -v resvg >/dev/null; then
+    resvg -w "$W" "$SVG" "$PNG"
+    return 0
+  fi
+
+  for chrome in chromium chromium-browser google-chrome; do
+    command -v "$chrome" >/dev/null || continue
+
+    # NOTE(@azazeal): the output path must be a plain directory under $HOME. A
+    # snap Chromium cannot write to /tmp at all, and its home interface excludes
+    # dotted directories, so both usual scratch locations fail with a bare
+    # "Permission denied".
+    "$chrome" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+      --force-device-scale-factor=1 \
+      --window-size="$W,$H" \
+      --screenshot="$PNG" \
+      "$SVG" 2>/dev/null || true
+
+    [ -r "$PNG" ] || die "$chrome wrote no PNG; if it is a snap, see the note in $prog"
+
+    return 0
+  done
+
+  return 1
+}
+
+if ! render; then
+  printf '%s: no SVG rasterizer found, so the PNG was skipped\n' "$prog" >&2
+  printf '%s\n%s\n' "$DOC" "$SVG"
+  exit 0
+fi
+
+# The sheet is flat color, so quantizing is a large saving for nothing given up.
+if command -v pngquant >/dev/null; then
+  pngquant --quality 90-100 --speed 1 --strip --force --output "$PNG" -- "$PNG"
+fi
+
+printf '%s\n%s\n%s\n' "$DOC" "$SVG" "$PNG"

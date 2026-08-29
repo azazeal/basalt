@@ -1,0 +1,38 @@
+name: Dependabot auto-merge
+
+# NOTE(@azazeal): pull_request_target because a Dependabot pull_request gets a
+# read-only token and cannot turn auto-merge on. Safe only while nothing here
+# checks the pull request out, so do not add a checkout step.
+on: pull_request_target
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Auto-merge
+    runs-on: ubuntu-latest
+
+    # Anyone can open a pull request; only Dependabot's own get this.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Fetch the update's metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # --auto waits for the required checks, so this queues rather than merges.
+      # Majors are read by hand: they are the one bump that can change meaning.
+      #
+      # NOTE(@azazeal): needs "Allow auto-merge", which GitHub gates behind the
+      # repository being public. Fails loudly until then.
+      - name: Queue it behind the checks
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR"
+        env:
+          PR: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

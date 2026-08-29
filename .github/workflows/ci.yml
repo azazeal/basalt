@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    tags-ignore:
+      - "**"
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint GitHub workflows
+        uses: docker://index.docker.io/rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
+        with:
+          args: -color
+
+      # NOTE(@azazeal): pinned, not the runner's. The scripts are POSIX sh, and
+      # the apt shellcheck is old enough to disagree with a current one about
+      # SC2015, so an unpinned lint fails on the runner and passes on a desk.
+      - name: Lint the scripts
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt \
+            koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            -s sh .github/scripts/*
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache: false
+          check-latest: true
+          go-version-file: go.mod
+
+      - name: Check the formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          printf '%s\n' "$unformatted"
+          test -z "$unformatted"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+  sheet:
+    name: Sheet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache: false
+          check-latest: true
+          go-version-file: go.mod
+
+      # The sheet and the export both claim they cannot drift from the palette,
+      # which is only true if something checks. The PNG is left out: it depends
+      # on which rasterizer drew it, so it would fail on that and not on us.
+      - name: Redraw the sheet and the export
+        run: .github/scripts/screenshot -s
+
+      - name: Check they match what is committed
+        run: git diff --exit-code -- assets/palette.svg basalt.json
