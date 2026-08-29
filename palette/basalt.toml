@@ -158,11 +158,23 @@ container = { lightness = 34.0, over = 0.040 }
 # Seven accents, one per thing the theme needs to say, none closer than 34
 # degrees. The notes say what an accent means, not where it is used.
 #
-# NOTE(@azazeal): seven is one more than a terminal can name. ANSI has six
-# colors and two greys, so a mapping onto those slots has orange left over.
-# Name it outright rather than smuggle it into the slot marked yellow: a
+# NOTE(@azazeal): a terminal has fewer slots than the wheel has colors, and the
+# shortfall runs two ways. Neither should be papered over.
+#
+# In hue, ANSI names six colors and two greys, so a mapping has orange left
+# over. Name it outright rather than smuggle it into the slot marked yellow: a
 # palette that answers "yellow" with an orange lies to every program that asks,
 # invisibly, until two consumers disagree.
+#
+# In weight, each accent is asked for a normal and a bright, and there is no
+# second weight to give, so the bright half is the normal half and only the four
+# greys differ. That is a decision: `text` already sits where its hue reads
+# best, and clearing the 0.10 where two colors stop blurring costs ten points of
+# lightness, which leaves red pink at #F99999, orange peach at #FABB90 and blue
+# pastel at #A6CFFA. Only green and cyan survive the climb, so the fix would
+# need per-accent overrides pulling opposite ways, red's downward. A program
+# that wants two weights of one accent wants a ground with text on it, which the
+# renditions have; one limited to sixteen slots does without.
 #
 # An accent may set its own text lightness, but only for a property of sRGB or
 # of vision. Three do, and each says which.

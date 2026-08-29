@@ -62,6 +62,11 @@ is a statement about the thing being themed rather than about the color. A
 Neovim highlight group and a status bar chip have nothing to say to each other,
 and a generator here would have had to learn both.
 
+One thing a port should not decide for itself is a terminal's bright half, as it
+is the same as the normal half. An accent is one color, and the palette has no
+second text weight to give a bright slot, so only the four greys differ between
+the two halves. `palette/basalt.toml` says why.
+
 The export carries every entry as a hex and as the position it was computed
 from, so anything that needs to composite or derive a state can do the
 arithmetic without first undoing the conversion. Surfaces come in ladder order,
