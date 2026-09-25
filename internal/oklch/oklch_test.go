@@ -6,85 +6,62 @@ import (
 	"testing"
 )
 
-// near reports whether two floats agree to within tol, and is what every
-// assertion here is written in terms of: the conversions are irrational and
-// exact equality would only ever test the compiler.
-func near(t *testing.T, what string, got, want, tol float64) {
-	t.Helper()
+// The reference values below come from culori 4.0.2, an implementation that
+// shares no code with this one.
+var (
+	red   = RGB{R: 1}
+	green = RGB{G: 1}
+	blue  = RGB{B: 1}
 
-	if math.Abs(got-want) > tol {
-		t.Errorf("%s = %.6f, want %.6f (tolerance %g)", what, got, want, tol)
-	}
-}
+	redLCh   = LCh{L: 0.627955, C: 0.257683, H: 29.2339}
+	greenLCh = LCh{L: 0.866440, C: 0.294827, H: 142.4953}
+	blueLCh  = LCh{L: 0.452014, C: 0.313214, H: 264.0520}
+)
 
 func TestLCh(t *testing.T) {
 	cases := []struct {
-		hex     string
-		l, c, h float64
+		in   RGB
+		want LCh
 	}{
-		0: { // the page
-			hex: "#0F1219",
-			l:   0.182389,
-			c:   0.015198,
-			h:   266.7409,
+		0: { // red
+			in:   red,
+			want: redLCh,
 		},
-		1: { // the foreground
-			hex: "#ABB2BF",
-			l:   0.762093,
-			c:   0.020162,
-			h:   262.9873,
+		1: { // green
+			in:   green,
+			want: greenLCh,
 		},
-		2: { // an accent
-			hex: "#EF5F6B",
-			l:   0.672893,
-			c:   0.177473,
-			h:   18.2977,
+		2: { // blue
+			in:   blue,
+			want: blueLCh,
 		},
-		3: { // another, at the far side of the wheel
-			hex: "#5AB0F6",
-			l:   0.733190,
-			c:   0.131715,
-			h:   245.5411,
+		3: { // white, which has no chroma to carry a hue
+			in:   RGB{1, 1, 1},
+			want: LCh{L: 1},
 		},
-		4: { // the chrome's critical fill, which sits on the gamut ceiling
-			hex: "#9D0006",
-			l:   0.437370,
-			c:   0.178914,
-			h:   28.2597,
-		},
-		5: { // white, which has no chroma to carry a hue
-			hex: "#FFFFFF",
-			l:   1,
-		},
-		6: { // black, likewise
-			hex: "#000000",
+		4: { // black, likewise
 		},
 	}
 
 	for caseIndex, kase := range cases {
 		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
-			rgb, err := ParseHex(kase.hex)
-			if err != nil {
-				t.Fatalf("ParseHex(%q) failed: %v", kase.hex, err)
-			}
+			got := lch(kase.in)
 
-			got := rgb.LCh()
-
-			near(t, "L", got.L, kase.l, 1e-5)
-			near(t, "C", got.C, kase.c, 1e-5)
+			near(t, "L", got.L, kase.want.L, 1e-5)
+			near(t, "C", got.C, kase.want.C, 1e-5)
 
 			// Hue is meaningless without chroma to carry it, and the two
 			// achromatic cases above leave it to whatever the rounding says.
-			if kase.c > 0 {
-				near(t, "H", got.H, kase.h, 1e-3)
+			if kase.want.C > 0 {
+				near(t, "H", got.H, kase.want.H, 1e-3)
 			}
 		})
 	}
 }
 
 func TestRoundTrip(t *testing.T) {
-	// A coarse sweep of the cube: every conversion in the package is used on
-	// the way out and on the way back, so a sign error anywhere shows up here.
+	// A coarse sweep of the cube, out through lch and back through RGB, so a
+	// sign error in either shows up here.
 	//
 	// The tolerance is loose next to the others because the trip runs through
 	// a cube root and back. It is still two and a half orders of magnitude
@@ -97,7 +74,7 @@ func TestRoundTrip(t *testing.T) {
 			for b := 0; b < 256; b += 17 {
 				in := RGB{float64(r) / 255, float64(g) / 255, float64(b) / 255}
 
-				out := in.LCh().RGB()
+				out := lch(in).RGB()
 
 				near(t, "R", out.R, in.R, tol)
 				near(t, "G", out.G, in.G, tol)
@@ -108,20 +85,16 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestMaxChroma(t *testing.T) {
-	cases := []struct {
-		l, h float64
-		want float64
-	}{
-		0: { // the chrome's critical fill sits exactly on the ceiling
-			l:    0.437289,
-			h:    28.2971,
-			want: 0.178915,
-		},
-		1: { // blue at the accent lightness, the narrowest of the accents
-			l:    0.73,
-			h:    245,
-			want: 0.150143,
-		},
+	// A primary is a corner of the sRGB cube, so no color at its lightness and
+	// hue holds more chroma than it does.
+	//
+	// NOTE: blue is not a case, and fails as one. The line of constant OKLCh
+	// hue that ends in pure blue bends outside sRGB on the way and touches it
+	// again only at blue itself, so the ceiling at blue's lightness and hue is
+	// the edge where the line first leaves, around 0.266.
+	cases := []LCh{
+		0: redLCh,
+		1: greenLCh,
 	}
 
 	// The tolerance is looser than elsewhere because the ceiling is defined
@@ -131,7 +104,7 @@ func TestMaxChroma(t *testing.T) {
 
 	for caseIndex, kase := range cases {
 		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
-			near(t, "MaxChroma", MaxChroma(kase.l, kase.h), kase.want, tol)
+			near(t, "MaxChroma", MaxChroma(kase.L, kase.H), kase.C, tol)
 		})
 	}
 }
@@ -140,17 +113,17 @@ func TestMaxChromaIsTheCeiling(t *testing.T) {
 	// Whatever the ceiling is, sitting on it must be showable and stepping
 	// past it must not be. This is the property the palette leans on when it
 	// asks for a fraction of the ceiling, so it is checked across the wheel
-	// rather than at the two points the table above pins.
+	// rather than at the points the table above pins.
 	for h := 0.0; h < 360; h += 15 {
 		for _, l := range []float64{0.2, 0.45, 0.73, 0.9} {
-			max := MaxChroma(l, h)
+			ceiling := MaxChroma(l, h)
 
-			if !(LCh{L: l, C: max, H: h}).RGB().InGamut() {
-				t.Errorf("L=%.2f H=%.0f: chroma %.6f is the ceiling but falls outside sRGB", l, h, max)
+			if !(LCh{L: l, C: ceiling, H: h}).RGB().InGamut() {
+				t.Errorf("L=%.2f H=%.0f: chroma %.6f is the ceiling but falls outside sRGB", l, h, ceiling)
 			}
 
-			if (LCh{L: l, C: max + 1e-3, H: h}).RGB().InGamut() {
-				t.Errorf("L=%.2f H=%.0f: chroma %.6f is past the ceiling but fits sRGB", l, h, max+1e-3)
+			if (LCh{L: l, C: ceiling + 1e-3, H: h}).RGB().InGamut() {
+				t.Errorf("L=%.2f H=%.0f: chroma %.6f is past the ceiling but fits sRGB", l, h, ceiling+1e-3)
 			}
 		}
 	}
@@ -185,9 +158,10 @@ func TestContrast(t *testing.T) {
 	near(t, "black on white", Contrast(black, white), 21, 1e-9)
 	near(t, "white on white", Contrast(white, white), 1, 1e-9)
 
-	fg, _ := ParseHex("#ABB2BF")
-	bg, _ := ParseHex("#0F1219")
-	near(t, "the foreground on the page", Contrast(fg, bg), 8.789643, 1e-5)
+	// The darkest grey that passes 4.5:1 on white, which checkers report at
+	// 4.54.
+	const v = 0x76 / 255.0
+	near(t, "#767676 on white", Contrast(RGB{v, v, v}, white), 4.54, 0.005)
 }
 
 func TestDifference(t *testing.T) {
@@ -220,66 +194,43 @@ func TestDifference(t *testing.T) {
 	), 0.10, 1e-12)
 }
 
-func TestParseHex(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    string
-		wantErr bool
-	}{
-		0: { // the canonical form
-			in:   "#0F1219",
-			want: "#0F1219",
-		},
-		1: { // the # is optional
-			in:   "0f1219",
-			want: "#0F1219",
-		},
-		2: { // surrounding space is trimmed
-			in:   "  #0F1219  ",
-			want: "#0F1219",
-		},
-		3: { // empty
-			in:      "",
-			wantErr: true,
-		},
-		4: { // the three-digit shorthand is not accepted
-			in:      "#FFF",
-			wantErr: true,
-		},
-		5: { // not hex digits
-			in:      "#GGGGGG",
-			wantErr: true,
-		},
-		6: { // one digit too many
-			in:      "#0F12199",
-			wantErr: true,
-		},
-	}
-
-	for caseIndex, kase := range cases {
-		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
-			got, err := ParseHex(kase.in)
-
-			switch {
-			case kase.wantErr && err == nil:
-				t.Fatalf("ParseHex(%q) succeeded, want an error", kase.in)
-			case kase.wantErr:
-				return
-			case err != nil:
-				t.Fatalf("ParseHex(%q) failed: %v", kase.in, err)
-			}
-
-			if got.Hex() != kase.want {
-				t.Errorf("ParseHex(%q).Hex() = %s, want %s", kase.in, got.Hex(), kase.want)
-			}
-		})
-	}
-}
-
 func TestHexClamps(t *testing.T) {
 	// A color outside sRGB still has to render, and Hex clamps rather than
 	// wrapping, so a component past the end lands on the end.
 	if got, want := (RGB{1.4, -0.2, 0.5}).Hex(), "#FF0080"; got != want {
 		t.Errorf("Hex() = %s, want %s", got, want)
 	}
+}
+
+// near reports whether two floats agree to within tol. The conversions are
+// irrational, so exact equality would only ever test the compiler.
+func near(t *testing.T, what string, got, want, tol float64) {
+	t.Helper()
+
+	if math.Abs(got-want) > tol {
+		t.Errorf("%s = %.6f, want %.6f (tolerance %g)", what, got, want, tol)
+	}
+}
+
+// lch converts sRGB to OKLCh, the inverse of [LCh.RGB]. Only the tests need
+// it: the palette is written as positions and never read back from a hex.
+func lch(c RGB) LCh {
+	r, g, b := linear(c.R), linear(c.G), linear(c.B)
+
+	l := 0.4122214708*r + 0.5363325363*g + 0.0514459929*b
+	m := 0.2119034982*r + 0.6806995451*g + 0.1073969566*b
+	s := 0.0883024619*r + 0.2817188376*g + 0.6299787005*b
+
+	l, m, s = math.Cbrt(l), math.Cbrt(m), math.Cbrt(s)
+
+	lightness := 0.2104542553*l + 0.7936177850*m - 0.0040720468*s
+	a := 1.9779984951*l - 2.4285922050*m + 0.4505937099*s
+	bb := 0.0259040371*l + 0.7827717662*m - 0.8086757660*s
+
+	h := math.Atan2(bb, a) * 180 / math.Pi
+	if h < 0 {
+		h += 360
+	}
+
+	return LCh{L: lightness, C: math.Hypot(a, bb), H: h}
 }
