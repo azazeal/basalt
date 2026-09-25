@@ -20,10 +20,6 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: read # to check the repository out
-      security-events: write # for zizmor to file its findings
-
     steps:
       - name: Checkout the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,9 +40,13 @@ jobs:
             koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
             -s sh .github/scripts/*
 
+      # Annotations rather than the Security tab: zizmor exits 0 whenever it
+      # writes SARIF, so that mode reports findings and never fails the job.
       - name: Audit the workflows
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
+          advanced-security: false
+          annotations: true
           online-audits: false
 
   build:
