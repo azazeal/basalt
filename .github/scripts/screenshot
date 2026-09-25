@@ -36,8 +36,8 @@ EOF
 svg_only=no
 while getopts sh opt; do
   case $opt in
-    s) svg_only=yes ;;
-    *) usage ;;
+  s) svg_only=yes ;;
+  *) usage ;;
   esac
 done
 
