@@ -36,8 +36,8 @@ EOF
 svg_only=no
 while getopts sh opt; do
   case $opt in
-    s) svg_only=yes ;;
-    *) usage ;;
+  s) svg_only=yes ;;
+  *) usage ;;
   esac
 done
 
@@ -58,10 +58,6 @@ if [ "$svg_only" = yes ]; then
 fi
 
 # The canvas is read off the drawing, since the sheet grows as the palette does.
-#
-# NOTE(@azazeal): the drawing is one line with no trailing newline, so this
-# cannot be a `read`: read returns non-zero on input that does not end in a
-# newline, having assigned good values, and `set -e` then ends the script.
 dims=$(grep -o 'width="[0-9]*" height="[0-9]*"' "$SVG" | head -1 | grep -o '[0-9][0-9]*')
 W=$(printf '%s\n' "$dims" | sed -n 1p)
 H=$(printf '%s\n' "$dims" | sed -n 2p)
@@ -69,42 +65,30 @@ H=$(printf '%s\n' "$dims" | sed -n 2p)
 [ -n "$W" ] || die "cannot read the sheet's size out of $SVG"
 [ -n "$H" ] || die "cannot read the sheet's size out of $SVG"
 
-# WARN(@azazeal): not ImageMagick. Its SVG renderer restarts every <tspan> at
-# the parent's x instead of advancing, so the code sample comes out as
-# overlapping words. It draws the swatches correctly, which hides the breakage.
-render() {
-  if command -v rsvg-convert >/dev/null; then
-    rsvg-convert -w "$W" -h "$H" -o "$PNG" "$SVG"
-    return 0
-  fi
+# The last run's PNG goes first, so a rasterizer that writes nothing cannot
+# pass it off as this run's.
+rm -f "$PNG"
 
-  if command -v resvg >/dev/null; then
-    resvg -w "$W" "$SVG" "$PNG"
-    return 0
-  fi
+# NOTE: not ImageMagick. Its SVG renderer restarts every <tspan> at the parent's
+# x instead of advancing, so the code sample comes out as overlapping words. It
+# draws the swatches correctly, which hides the breakage.
+if command -v rsvg-convert >/dev/null; then
+  rsvg-convert -w "$W" -h "$H" -o "$PNG" "$SVG"
+elif command -v resvg >/dev/null; then
+  resvg -w "$W" "$SVG" "$PNG"
+elif chrome=$(command -v chromium || command -v chromium-browser || command -v google-chrome); then
+  # NOTE: the output path must be a plain directory under $HOME. A snap Chromium
+  # cannot write to /tmp at all, and its home interface excludes dotted
+  # directories, so both usual scratch locations fail with a bare "Permission
+  # denied".
+  "$chrome" --headless --disable-gpu --no-sandbox --hide-scrollbars \
+    --force-device-scale-factor=1 \
+    --window-size="$W,$H" \
+    --screenshot="$PNG" \
+    "$SVG" 2>/dev/null || true
 
-  for chrome in chromium chromium-browser google-chrome; do
-    command -v "$chrome" >/dev/null || continue
-
-    # NOTE(@azazeal): the output path must be a plain directory under $HOME. A
-    # snap Chromium cannot write to /tmp at all, and its home interface excludes
-    # dotted directories, so both usual scratch locations fail with a bare
-    # "Permission denied".
-    "$chrome" --headless --disable-gpu --no-sandbox --hide-scrollbars \
-      --force-device-scale-factor=1 \
-      --window-size="$W,$H" \
-      --screenshot="$PNG" \
-      "$SVG" 2>/dev/null || true
-
-    [ -r "$PNG" ] || die "$chrome wrote no PNG; if it is a snap, see the note in $prog"
-
-    return 0
-  done
-
-  return 1
-}
-
-if ! render; then
+  [ -r "$PNG" ] || die "$chrome wrote no PNG; if it is a snap, see the note in $prog"
+else
   printf '%s: no SVG rasterizer found, so the PNG was skipped\n' "$prog" >&2
   printf '%s\n%s\n' "$DOC" "$SVG"
   exit 0

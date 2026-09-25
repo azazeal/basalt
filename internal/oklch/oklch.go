@@ -1,6 +1,6 @@
-// Package oklch maps sRGB to OKLCh and vice-versa, and answers the two
-// questions the palette is built on: how much color a hue can hold at a given
-// lightness, and how far apart two colors read.
+// Package oklch maps OKLCh to sRGB, and answers the two questions the palette
+// is built on: how much color a hue can hold at a given lightness, and how far
+// apart two colors read.
 //
 // OKLCh is a cylindrical form of OKLab, where lightness tracks what the eye
 // reports rather than what the encoding says. Two colors at one L look equally
@@ -10,8 +10,6 @@ package oklch
 import (
 	"fmt"
 	"math"
-	"strconv"
-	"strings"
 )
 
 // RGB is a gamma-encoded sRGB color. Each component runs 0 to 1, and a value
@@ -24,26 +22,6 @@ type RGB struct {
 // from 0 upward with no fixed ceiling, and H is hue in degrees.
 type LCh struct {
 	L, C, H float64
-}
-
-// ParseHex reads a "#RRGGBB" color. The leading # is optional.
-func ParseHex(s string) (RGB, error) {
-	h := strings.TrimPrefix(strings.TrimSpace(s), "#")
-	if len(h) != 6 {
-		return RGB{}, fmt.Errorf("oklch: %q is not a 6-digit hex color", s)
-	}
-
-	var c [3]float64
-	for i := range c {
-		v, err := strconv.ParseUint(h[i*2:i*2+2], 16, 8)
-		if err != nil {
-			return RGB{}, fmt.Errorf("oklch: %q is not a 6-digit hex color", s)
-		}
-
-		c[i] = float64(v) / 255
-	}
-
-	return RGB{c[0], c[1], c[2]}, nil
 }
 
 // Hex renders the color as "#RRGGBB", clamping any component that falls
@@ -70,46 +48,6 @@ func (c RGB) InGamut() bool {
 	return true
 }
 
-// linear undoes the sRGB transfer function, giving light rather than signal.
-func linear(v float64) float64 {
-	if v <= 0.04045 {
-		return v / 12.92
-	}
-
-	return math.Pow((v+0.055)/1.055, 2.4)
-}
-
-// encode applies the sRGB transfer function, the inverse of [linear].
-func encode(v float64) float64 {
-	if v <= 0.0031308 {
-		return v * 12.92
-	}
-
-	return 1.055*math.Pow(v, 1/2.4) - 0.055
-}
-
-// LCh converts the color to OKLCh.
-func (c RGB) LCh() LCh {
-	r, g, b := linear(c.R), linear(c.G), linear(c.B)
-
-	l := 0.4122214708*r + 0.5363325363*g + 0.0514459929*b
-	m := 0.2119034982*r + 0.6806995451*g + 0.1073969566*b
-	s := 0.0883024619*r + 0.2817188376*g + 0.6299787005*b
-
-	l, m, s = math.Cbrt(l), math.Cbrt(m), math.Cbrt(s)
-
-	lightness := 0.2104542553*l + 0.7936177850*m - 0.0040720468*s
-	a := 1.9779984951*l - 2.4285922050*m + 0.4505937099*s
-	bb := 0.0259040371*l + 0.7827717662*m - 0.8086757660*s
-
-	h := math.Mod(math.Atan2(bb, a)*180/math.Pi, 360)
-	if h < 0 {
-		h += 360
-	}
-
-	return LCh{L: lightness, C: math.Hypot(a, bb), H: h}
-}
-
 // RGB converts the color to sRGB. The result may fall outside the gamut; see
 // [RGB.InGamut] and [LCh.Fit].
 func (c LCh) RGB() RGB {
@@ -134,13 +72,24 @@ func (c LCh) Hex() string {
 	return c.Fit().RGB().Hex()
 }
 
+// Fit reduces chroma until sRGB can show the color. Lightness and hue are left
+// alone: dropping chroma dulls a color, clamping channels changes it.
+func (c LCh) Fit() LCh {
+	if c.RGB().InGamut() {
+		return c
+	}
+
+	c.C = MaxChroma(c.L, c.H)
+
+	return c
+}
+
 // maxChromaSteps is the bisection depth [MaxChroma] runs to. Fifty halvings
 // land well inside the rounding of an 8-bit channel.
 const maxChromaSteps = 50
 
-// MaxChroma returns the most chroma sRGB can express at a lightness and hue.
-// Asking for a fraction of it keeps every hue as colorful as it can be, rather
-// than holding them all to whatever the narrowest allows.
+// MaxChroma returns how much chroma a color at a lightness and hue can carry
+// before it leaves sRGB.
 func MaxChroma(l, h float64) float64 {
 	lo, hi := 0.0, 0.5
 	for range maxChromaSteps {
@@ -155,32 +104,11 @@ func MaxChroma(l, h float64) float64 {
 	return lo
 }
 
-// Fit reduces chroma until sRGB can show the color. Lightness and hue are left
-// alone: dropping chroma dulls a color, clamping channels changes it.
-func (c LCh) Fit() LCh {
-	if c.RGB().InGamut() {
-		return c
-	}
-
-	c.C = MaxChroma(c.L, c.H)
-
-	return c
-}
-
-// luminance is WCAG's relative luminance, not OKLCh's lightness: it weights
-// channels by emitted light rather than by how bright they look.
-func (c RGB) luminance() float64 {
-	r, g, b := linear(c.R), linear(c.G), linear(c.B)
-
-	return 0.2126*r + 0.7152*g + 0.0722*b
-}
-
 // Difference returns how far apart two colors look, as their distance in
 // OKLab. Below about 0.10 a pair starts to blur into one color.
 //
-// The palette needs this as well as [Contrast]. Contrast counts only lightness,
-// so it calls two hues at one lightness identical; that is right for text on a
-// ground and wrong for two grounds side by side with nothing written on them.
+// Unlike [Contrast], which counts only lightness, it tells two hues at one
+// lightness apart: two grounds side by side, with nothing written on them.
 func Difference(a, b LCh) float64 {
 	ax, ay := a.C*math.Cos(a.H*math.Pi/180), a.C*math.Sin(a.H*math.Pi/180)
 	bx, by := b.C*math.Cos(b.H*math.Pi/180), b.C*math.Sin(b.H*math.Pi/180)
@@ -197,4 +125,30 @@ func Contrast(a, b RGB) float64 {
 	}
 
 	return (x + 0.05) / (y + 0.05)
+}
+
+// luminance is WCAG's relative luminance, not OKLCh's lightness: it weights
+// channels by emitted light rather than by how bright they look.
+func (c RGB) luminance() float64 {
+	r, g, b := linear(c.R), linear(c.G), linear(c.B)
+
+	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+// linear undoes the sRGB transfer function, giving light rather than signal.
+func linear(v float64) float64 {
+	if v <= 0.04045 {
+		return v / 12.92
+	}
+
+	return math.Pow((v+0.055)/1.055, 2.4)
+}
+
+// encode applies the sRGB transfer function, the inverse of [linear].
+func encode(v float64) float64 {
+	if v <= 0.0031308 {
+		return v * 12.92
+	}
+
+	return 1.055*math.Pow(v, 1/2.4) - 0.055
 }

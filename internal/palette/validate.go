@@ -3,11 +3,12 @@ package palette
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
-// NOTE(@azazeal): between these two nothing reads on a fill, dark text and
-// light alike, with the floor around 52. Anything filled with is checked
-// against the band rather than trusted.
+// Between these two nothing reads on a fill, dark text and light alike, with
+// the floor around 52. Anything filled with is checked against the band rather
+// than trusted.
 const trapLo, trapHi = 49.0, 58.0
 
 // validate rejects a palette that cannot mean what it says. Loud on purpose:
@@ -17,7 +18,7 @@ func (s *spec) validate() error {
 		return err
 	}
 
-	if err := s.Renditions.validate(); err != nil {
+	if err := s.Renditions.validate(s.Surfaces.Steps); err != nil {
 		return err
 	}
 
@@ -41,6 +42,13 @@ func (s *spec) validate() error {
 		}
 
 		if a.Lightness == 0 {
+			if a.Why != "" {
+				return fmt.Errorf(
+					"accent %q says why it overrides the common lightness, but does not override it",
+					a.Name,
+				)
+			}
+
 			continue
 		}
 
@@ -57,8 +65,6 @@ func (s *spec) validate() error {
 			)
 		}
 
-		// An override with no reason is a preference in a rule's clothes, and
-		// the next reader cannot tell the difference.
 		if a.Why == "" {
 			return fmt.Errorf("accent %q overrides the common lightness without saying why", a.Name)
 		}
@@ -97,8 +103,6 @@ func (s *surfacesSpec) validate() error {
 			return fmt.Errorf("surface step %q has lightness %g, which is off the scale", step.Name, step.Lightness)
 		}
 
-		// A ladder that doubles back is always a mistake, and two steps at one
-		// lightness are one step wearing two names.
 		if step.Lightness <= prev {
 			return fmt.Errorf("surface step %q is not lighter than the step before it", step.Name)
 		}
@@ -108,51 +112,45 @@ func (s *surfacesSpec) validate() error {
 	return nil
 }
 
-func (s *renditionsSpec) validate() error {
-	for name, r := range map[string]renditionSpec{
-		"text": s.Text,
-		"deep": s.Deep,
+func (s *renditionsSpec) validate(surfaces []stepSpec) error {
+	for _, r := range []struct {
+		name string
+		spec renditionSpec
+	}{
+		{"text", s.Text},
+		{"deep", s.Deep},
 	} {
-		if err := r.validate(); err != nil {
-			return fmt.Errorf("rendition %q: %w", name, err)
-		}
-	}
-
-	for name, g := range map[string]groundSpec{
-		"wash":      s.Wash,
-		"container": s.Container,
-	} {
-		if g.Lightness < 0 || g.Lightness > 100 {
-			return fmt.Errorf("the %s grounds sit at lightness %g, which is off the scale", name, g.Lightness)
+		if err := r.spec.validate(); err != nil {
+			return fmt.Errorf("rendition %q: %w", r.name, err)
 		}
 
-		if g.Over <= 0 {
-			return fmt.Errorf(
-				"the %s grounds carry %g more color than the ladder, which would leave them the ladder",
-				name, g.Over,
-			)
-		}
-	}
-
-	// The one looked through has to be the darker of the two.
-	if s.Wash.Lightness >= s.Container.Lightness {
-		return fmt.Errorf(
-			"the wash sits at lightness %g and the container at %g, so the one meant to be seen through is not the lighter",
-			s.Wash.Lightness, s.Container.Lightness,
-		)
-	}
-
-	for name, l := range map[string]float64{
-		"text": s.Text.Lightness,
-		"deep": s.Deep.Lightness,
-	} {
-		if l > trapLo && l < trapHi {
+		if l := r.spec.Lightness; l > trapLo && l < trapHi {
 			return fmt.Errorf(
 				"rendition %q has lightness %g, which is in the band from %g to %g"+
 					" where neither dark nor light text reads on a fill",
-				name, l, trapLo, trapHi,
+				r.name, l, trapLo, trapHi,
 			)
 		}
+	}
+
+	for _, g := range []struct {
+		name string
+		spec groundSpec
+	}{
+		{"wash", s.Wash},
+		{"container", s.Container},
+	} {
+		if err := g.spec.validate(surfaces); err != nil {
+			return fmt.Errorf("the %s grounds: %w", g.name, err)
+		}
+	}
+
+	if s.Wash.Lightness >= s.Container.Lightness {
+		return fmt.Errorf(
+			"the wash sits at lightness %g and the container at %g,"+
+				" so the one meant to be seen through is not the darker",
+			s.Wash.Lightness, s.Container.Lightness,
+		)
 	}
 
 	return nil
@@ -169,6 +167,31 @@ func (r renditionSpec) validate() error {
 
 	if r.Max < 0 {
 		return fmt.Errorf("the chroma cap %g is less than none", r.Max)
+	}
+
+	return nil
+}
+
+func (g groundSpec) validate(surfaces []stepSpec) error {
+	if g.Lightness < 0 || g.Lightness > 100 {
+		return fmt.Errorf("lightness %g is off the scale", g.Lightness)
+	}
+
+	if g.Over <= 0 {
+		return fmt.Errorf("%g more color than the ladder would leave them the ladder", g.Over)
+	}
+
+	if g.Clear < 0 {
+		return fmt.Errorf("clear %g is less than none", g.Clear)
+	}
+
+	// Either one alone would be read and then do nothing.
+	if (g.Clear > 0) != (g.Against != "") {
+		return errors.New("clear and against are given together or not at all")
+	}
+
+	if g.Against != "" && !slices.ContainsFunc(surfaces, func(s stepSpec) bool { return s.Name == g.Against }) {
+		return fmt.Errorf("against names %q, which is not a surface", g.Against)
 	}
 
 	return nil

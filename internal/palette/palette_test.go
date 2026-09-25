@@ -5,33 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
-)
 
-// sound is a spec that passes every check, for a case to spoil one field of.
-func sound() spec {
-	return spec{
-		Surfaces: surfacesSpec{
-			Hue:    264,
-			Chroma: 0.042,
-			Steps: []stepSpec{
-				{Name: "page", Lightness: 18},
-				{Name: "raised", Lightness: 26},
-				{Name: "body", Lightness: 76.8},
-			},
-		},
-		Renditions: renditionsSpec{
-			Text:      renditionSpec{Lightness: 74, Chroma: 0.90, Max: 0.160},
-			Deep:      renditionSpec{Lightness: 43, Chroma: 0.85, Max: 0.150},
-			Wash:      groundSpec{Lightness: 26, Over: 0.040},
-			Container: groundSpec{Lightness: 34, Over: 0.040},
-		},
-		Accents: []accentSpec{
-			{Name: "red", Hue: 18.3},
-			{Name: "blue", Hue: 245.5},
-		},
-	}
-}
+	"github.com/BurntSushi/toml"
+
+	"github.com/azazeal/basalt/internal/oklch"
+)
 
 func TestValidate(t *testing.T) {
 	cases := []struct {
@@ -116,6 +96,38 @@ func TestValidate(t *testing.T) {
 			spoil:   func(s *spec) { s.Renditions.Wash.Lightness = 40 },
 			wantErr: true,
 		},
+		20: { // a ground asked to clear a surface the ladder does not have
+			spoil: func(s *spec) {
+				s.Renditions.Wash.Clear = 0.085
+				s.Renditions.Wash.Against = "row"
+			},
+			wantErr: true,
+		},
+		21: { // clear with nothing to clear
+			spoil:   func(s *spec) { s.Renditions.Wash.Clear = 0.085 },
+			wantErr: true,
+		},
+		22: { // something to clear with no distance to clear it by
+			spoil:   func(s *spec) { s.Renditions.Container.Against = "raised" },
+			wantErr: true,
+		},
+		23: { // a distance of less than none
+			spoil: func(s *spec) {
+				s.Renditions.Wash.Clear = -0.1
+				s.Renditions.Wash.Against = "raised"
+			},
+			wantErr: true,
+		},
+		24: { // the container may clear a surface as well as the wash
+			spoil: func(s *spec) {
+				s.Renditions.Container.Clear = 0.1
+				s.Renditions.Container.Against = "raised"
+			},
+		},
+		25: { // a reason for an override that is not there
+			spoil:   func(s *spec) { s.Accents[0].Why = "reads pink" },
+			wantErr: true,
+		},
 	}
 
 	for caseIndex, kase := range cases {
@@ -134,54 +146,49 @@ func TestValidate(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
+	clearing := sound()
+	clearing.Renditions.Wash.Clear, clearing.Renditions.Wash.Against = 0.12, "raised"
+	clearing.Renditions.Container.Clear, clearing.Renditions.Container.Against = 0.14, "raised"
+
+	cases := []spec{
+		0: sound(),   // the sound spec
+		1: clearing,  // both grounds asked to clear a surface
+		2: basalt(t), // the palette itself
+	}
+
+	for caseIndex, kase := range cases {
+		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
+			p, err := kase.resolve()
+			if err != nil {
+				t.Fatalf("resolve failed: %v", err)
+			}
+
+			if got, want := len(p.Surfaces), len(kase.Surfaces.Steps); got != want {
+				t.Fatalf("resolved %d surfaces, want %d", got, want)
+			}
+
+			// Every surface takes the one hue the ladder was given, which is
+			// what keeps the greys from drifting apart as they lighten.
+			for _, c := range p.Surfaces {
+				if math.Abs(c.LCh.H-kase.Surfaces.Hue) > 1e-9 {
+					t.Errorf("surface %q sits at hue %.4f, want %.4f", c.Name, c.LCh.H, kase.Surfaces.Hue)
+				}
+			}
+
+			for _, a := range p.Accents {
+				checkAccent(t, p, kase.Renditions, a)
+			}
+		})
+	}
+}
+
+func TestResolveGivesUp(t *testing.T) {
+	// No lightness a ground could rise to puts it this far from the page.
 	s := sound()
-	p := s.resolve()
+	s.Renditions.Wash.Clear, s.Renditions.Wash.Against = 1, "page"
 
-	if got, want := len(p.Surfaces), len(s.Surfaces.Steps); got != want {
-		t.Fatalf("resolved %d surfaces, want %d", got, want)
-	}
-
-	// Every surface takes the one hue the ladder was given, which is what
-	// keeps the greys from drifting apart as they lighten.
-	for _, c := range p.Surfaces {
-		if math.Abs(c.LCh.H-s.Surfaces.Hue) > 1e-9 {
-			t.Errorf("surface %q sits at hue %.4f, want %.4f", c.Name, c.LCh.H, s.Surfaces.Hue)
-		}
-	}
-
-	for _, a := range p.Accents {
-		// All three renditions of an accent are the same accent, so they share
-		// its place on the wheel and differ only in lightness and chroma.
-		for _, r := range []struct {
-			what string
-			c    Color
-		}{
-			{"text", a.Text},
-			{"deep", a.Deep},
-			{"wash", a.Wash},
-			{"container", a.Container},
-		} {
-			if math.Abs(r.c.LCh.H-a.Hue) > 1e-9 {
-				t.Errorf("accent %q's %s sits at hue %.4f, want %.4f", a.Name, r.what, r.c.LCh.H, a.Hue)
-			}
-
-			if !r.c.LCh.RGB().InGamut() {
-				t.Errorf("accent %q's %s is a color sRGB cannot show", a.Name, r.what)
-			}
-		}
-
-		if !(a.Deep.LCh.L < a.Text.LCh.L) {
-			t.Errorf("accent %q's deep rendition is not darker than its text one", a.Name)
-		}
-
-		if !(a.Container.LCh.L < a.Deep.LCh.L) {
-			t.Errorf("accent %q's container is not darker than its deep rendition", a.Name)
-		}
-
-		// The one you look through has to sit under the one you look at.
-		if !(a.Wash.LCh.L < a.Container.LCh.L) {
-			t.Errorf("accent %q's wash is not darker than its container", a.Name)
-		}
+	if _, err := s.resolve(); err == nil {
+		t.Error("resolve placed a wash that cannot clear the page")
 	}
 }
 
@@ -195,23 +202,81 @@ func TestResolveCapsChroma(t *testing.T) {
 		{Name: "magenta", Hue: 318},
 	}
 
-	p := s.resolve()
+	p, err := s.resolve()
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
 
 	magenta, _ := p.Accent("magenta")
-	if got, want := magenta.Text.LCh.C, s.Renditions.Text.Max; math.Abs(got-want) > 1e-9 {
+	if got, want := magenta.Text.C, s.Renditions.Text.Max; math.Abs(got-want) > 1e-9 {
 		t.Errorf("magenta's text chroma is %.4f, want it held at the cap of %.4f", got, want)
 	}
 
 	cyan, _ := p.Accent("cyan")
-	if cyan.Text.LCh.C >= s.Renditions.Text.Max {
-		t.Errorf("cyan's text chroma is %.4f, want it under the cap at %.4f", cyan.Text.LCh.C, s.Renditions.Text.Max)
+	if cyan.Text.C >= s.Renditions.Text.Max {
+		t.Errorf("cyan's text chroma is %.4f, want it under the cap at %.4f", cyan.Text.C, s.Renditions.Text.Max)
 	}
 }
 
 func TestLoad(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "palette.toml")
+	p, err := Load(write(t, sample))
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
 
-	const src = `
+	page, ok := p.Surface("page")
+	if !ok {
+		t.Fatal("the resolved palette has no surface named \"page\"")
+	}
+
+	if got, want := page.Hex(), "#0F1217"; got != want {
+		t.Errorf("page = %s, want %s", got, want)
+	}
+
+	blue, ok := p.Accent("blue")
+	if !ok {
+		t.Fatal("the resolved palette has no accent named \"blue\"")
+	}
+
+	if got, want := blue.Note, "functions, focus"; got != want {
+		t.Errorf("blue's note = %q, want %q", got, want)
+	}
+}
+
+func TestLoadRejects(t *testing.T) {
+	cases := []struct {
+		old, new string
+	}{
+		0: { // a ladder that doubles back, which validate has to catch
+			old: "lightness = 76.8",
+			new: "lightness = 10.0",
+		},
+		1: { // a misspelled key, which would decode to nothing
+			old: "hue = 245.5",
+			new: "hue = 245.5\nlightnes = 68.0",
+		},
+		2: { // a misspelled key inside an inline table
+			old: "wash = { lightness = 26.0,",
+			new: "wash = { lightnes = 26.0,",
+		},
+	}
+
+	for caseIndex, kase := range cases {
+		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
+			src := strings.Replace(sample, kase.old, kase.new, 1)
+			if src == sample {
+				t.Fatalf("%q is not in the sample", kase.old)
+			}
+
+			if _, err := Load(write(t, src)); err == nil {
+				t.Error("Load accepted it")
+			}
+		})
+	}
+}
+
+// sample is a palette that loads, for a case to spoil.
+const sample = `
 [surfaces]
 hue = 264.0
 chroma = 0.042
@@ -236,68 +301,114 @@ hue = 245.5
 note = "functions, focus"
 `
 
+// write puts a palette where Load can read it.
+func write(t *testing.T, src string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "palette.toml")
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 		t.Fatalf("writing the palette failed: %v", err)
 	}
 
-	p, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
+	return path
+}
+
+// checkAccent holds one resolved accent to what the renditions promise.
+func checkAccent(t *testing.T, p *Palette, rs renditionsSpec, a Accent) {
+	t.Helper()
+
+	// All four renditions of an accent are the same accent, so they share its
+	// place on the wheel and differ only in lightness and chroma.
+	for _, r := range []struct {
+		what string
+		c    oklch.LCh
+	}{
+		{"text", a.Text},
+		{"deep", a.Deep},
+		{"wash", a.Wash},
+		{"container", a.Container},
+	} {
+		if math.Abs(r.c.H-a.Hue) > 1e-9 {
+			t.Errorf("accent %q's %s sits at hue %.4f, want %.4f", a.Name, r.what, r.c.H, a.Hue)
+		}
+
+		if !r.c.RGB().InGamut() {
+			t.Errorf("accent %q's %s is a color sRGB cannot show", a.Name, r.what)
+		}
 	}
 
-	page, ok := p.Surface("page")
-	if !ok {
-		t.Fatal("the resolved palette has no surface named \"page\"")
+	if !(a.Deep.L < a.Text.L) {
+		t.Errorf("accent %q's deep rendition is not darker than its text one", a.Name)
 	}
 
-	if got, want := page.Hex(), "#0F1217"; got != want {
-		t.Errorf("page = %s, want %s", got, want)
+	if !(a.Container.L < a.Deep.L) {
+		t.Errorf("accent %q's container is not darker than its deep rendition", a.Name)
 	}
 
-	blue, ok := p.Accent("blue")
-	if !ok {
-		t.Fatal("the resolved palette has no accent named \"blue\"")
+	// The one you look through has to sit under the one you look at, even
+	// after either has risen to clear a surface.
+	if !(a.Wash.L < a.Container.L) {
+		t.Errorf("accent %q's wash is not darker than its container", a.Name)
 	}
 
-	if got, want := blue.Note, "functions, focus"; got != want {
-		t.Errorf("blue's note = %q, want %q", got, want)
+	for _, g := range []struct {
+		what string
+		spec groundSpec
+		c    oklch.LCh
+	}{
+		{"wash", rs.Wash, a.Wash},
+		{"container", rs.Container, a.Container},
+	} {
+		if g.spec.Clear == 0 {
+			continue
+		}
+
+		against, _ := p.Surface(g.spec.Against)
+		if got := oklch.Difference(g.c, against.LCh); got < g.spec.Clear {
+			t.Errorf("accent %q's %s is %.4f from %s, want at least %.4f",
+				a.Name, g.what, got, g.spec.Against, g.spec.Clear)
+		}
 	}
 }
 
-func TestLoadRejectsAnUnsoundPalette(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "palette.toml")
+// sound is a spec that passes every check, for a case to spoil one field of.
+func sound() spec {
+	return spec{
+		Surfaces: surfacesSpec{
+			Hue:    264,
+			Chroma: 0.042,
+			Steps: []stepSpec{
+				{Name: "page", Lightness: 18},
+				{Name: "raised", Lightness: 26},
+				{Name: "body", Lightness: 76.8},
+			},
+		},
+		Renditions: renditionsSpec{
+			Text:      renditionSpec{Lightness: 74, Chroma: 0.90, Max: 0.160},
+			Deep:      renditionSpec{Lightness: 43, Chroma: 0.85, Max: 0.150},
+			Wash:      groundSpec{Lightness: 26, Over: 0.040},
+			Container: groundSpec{Lightness: 34, Over: 0.040},
+		},
+		Accents: []accentSpec{
+			{Name: "red", Hue: 18.3},
+			{Name: "blue", Hue: 245.5},
+		},
+	}
+}
 
-	// A ladder that doubles back, which validate has to catch on the way in
-	// rather than leave for a port to render.
-	const src = `
-[surfaces]
-hue = 264.0
-chroma = 0.042
+// basalt is the spec the repository ships, read without Load so the test can
+// see what each ground was asked to clear.
+func basalt(t *testing.T) spec {
+	t.Helper()
 
-[[surfaces.step]]
-name = "page"
-lightness = 40.0
-
-[[surfaces.step]]
-name = "body"
-lightness = 20.0
-
-[renditions]
-text = { lightness = 74.0, chroma = 0.90, max = 0.160 }
-deep = { lightness = 43.0, chroma = 0.85, max = 0.150 }
-wash = { lightness = 26.0, over = 0.040 }
-container = { lightness = 34.0, over = 0.040 }
-
-[[accent]]
-name = "blue"
-hue = 245.5
-`
-
-	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
-		t.Fatalf("writing the palette failed: %v", err)
+	var s spec
+	if _, err := toml.DecodeFile(filepath.Join("..", "..", "palette", "basalt.toml"), &s); err != nil {
+		t.Fatalf("reading the palette failed: %v", err)
 	}
 
-	if _, err := Load(path); err == nil {
-		t.Error("Load accepted a ladder that doubles back")
+	if err := s.validate(); err != nil {
+		t.Fatalf("the palette does not validate: %v", err)
 	}
+
+	return s
 }

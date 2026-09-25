@@ -9,6 +9,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 
@@ -19,82 +20,82 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "basalt: %v\n", err)
+
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	path := flag.String("palette", "palette/basalt.toml", "the palette to resolve")
 	svg := flag.String("svg", "", "also draw the palette as a sheet, and write it here")
 	out := flag.String("json", "", "also write the palette as JSON, and write it here")
 	flag.Parse()
 
-	if *path == "" {
-		fmt.Fprintln(os.Stderr, "basalt: -palette needs the path to a palette")
-
-		os.Exit(1)
-	}
-
 	p, err := palette.Load(*path)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
 
-		os.Exit(1)
+	// first, so a palette the report cannot measure writes nothing
+	if err := report(os.Stdout, p); err != nil {
+		return err
 	}
 
 	if *out != "" {
 		data, err := export.JSON(p)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "basalt: rendering the palette as JSON: %v\n", err)
-
-			os.Exit(1)
+			return fmt.Errorf("failed rendering the palette as JSON: %w", err)
 		}
 
 		if err := os.WriteFile(*out, data, 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "basalt: writing the palette: %v\n", err)
-
-			os.Exit(1)
+			return fmt.Errorf("failed writing the palette: %w", err)
 		}
 	}
 
 	if *svg != "" {
 		if err := os.WriteFile(*svg, render.SVG(p), 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "basalt: writing the sheet: %v\n", err)
-
-			os.Exit(1)
+			return fmt.Errorf("failed writing the sheet: %w", err)
 		}
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	defer w.Flush()
-
-	report(w, p)
+	return nil
 }
 
-func report(w *tabwriter.Writer, p *palette.Palette) {
-	page, ok := p.Surface("page")
-	if !ok {
-		fmt.Fprintln(os.Stderr, "the palette has no surface named \"page\" to measure against")
+func report(w io.Writer, p *palette.Palette) error {
+	var page, sunk, bright, muted, body palette.Color
 
-		os.Exit(1)
+	for _, s := range []struct {
+		name string
+		c    *palette.Color
+	}{
+		{"page", &page},
+		{"sunk", &sunk},
+		{"bright", &bright},
+		{"muted", &muted},
+		{"body", &body},
+	} {
+		c, ok := p.Surface(s.name)
+		if !ok {
+			return fmt.Errorf("the palette has no surface named %q to measure against", s.name)
+		}
+
+		*s.c = c
 	}
 
-	sunk, _ := p.Surface("sunk")
-	bright, _ := p.Surface("bright")
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(w, "SURFACES\tHEX\tL\tC\tvs PAGE\t")
+	fmt.Fprintln(tw, "SURFACES\tHEX\tL\tC\tvs PAGE\t")
 	for _, c := range p.Surfaces {
-		fmt.Fprintf(w, "%s\t%s\t%.1f\t%.4f\t%.2f\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%.1f\t%.4f\t%.2f\t%s\n",
 			c.Name, c.Hex(), c.LCh.L*100, c.LCh.C, oklch.Contrast(c.RGB(), page.RGB()), c.Note)
 	}
 
-	// The four numbers an accent has to survive. Text is read on the page;
-	// the same value is filled with and read against the deepest surface;
-	// deep is filled with and read against the lightest; and the text value
-	// is what sits on the container.
-	// A wash is measured against the dimmest thing it must leave readable, and
-	// a container against the ordinary text that sits on one.
-	muted, _ := p.Surface("muted")
-	body, _ := p.Surface("body")
-
-	fmt.Fprintln(w, "\nACCENTS\tHUE\tTEXT\ton PAGE\tsunk on IT\tDEEP\tbright on IT\tWASH\tcomment on IT\tCONTAINER\tbody on IT\t")
+	fmt.Fprintln(tw, "\nACCENTS\tHUE\tTEXT\ton PAGE\tsunk on IT\tDEEP\tbright on IT\t"+
+		"WASH\tcomment on IT\tCONTAINER\tbody on IT\t")
 	for _, a := range p.Accents {
-		fmt.Fprintf(w, "%s\t%.1f\t%s\t%.2f\t%.2f\t%s\t%.2f\t%s\t%.2f\t%s\t%.2f\t\n",
+		fmt.Fprintf(tw, "%s\t%.1f\t%s\t%.2f\t%.2f\t%s\t%.2f\t%s\t%.2f\t%s\t%.2f\t\n",
 			a.Name,
 			a.Hue,
 			a.Text.Hex(), oklch.Contrast(a.Text.RGB(), page.RGB()), oklch.Contrast(sunk.RGB(), a.Text.RGB()),
@@ -103,4 +104,6 @@ func report(w *tabwriter.Writer, p *palette.Palette) {
 			a.Container.Hex(), oklch.Contrast(body.RGB(), a.Container.RGB()),
 		)
 	}
+
+	return tw.Flush()
 }

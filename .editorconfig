@@ -8,6 +8,10 @@ insert_final_newline = true
 tab_width = unset
 trim_trailing_whitespace = true
 
-[*.{json,lua,md,toml,yaml,yml}]
+[*.{json,md,toml,yaml,yml}]
+indent_size = 2
+indent_style = space
+
+[.github/scripts/*]
 indent_size = 2
 indent_style = space

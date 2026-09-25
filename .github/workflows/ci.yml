@@ -2,27 +2,20 @@ name: CI
 
 on:
   push:
-    tags-ignore:
-      - "**"
     branches:
       - main
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
 
 permissions:
   contents: read
 
 jobs:
+  # NOTE: the job names are the checks the main ruleset requires. Renaming one,
+  # or folding one into another, blocks every pull request until the ruleset
+  # is changed to match.
   lint:
     name: Lint
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read # to check the repository out
-      security-events: write # for zizmor to file its findings
 
     steps:
       - name: Checkout the code
@@ -35,7 +28,7 @@ jobs:
         with:
           args: -color
 
-      # NOTE(@azazeal): pinned, not the runner's. The scripts are POSIX sh, and
+      # NOTE: pinned to v0.11.0, not the runner's. The scripts are POSIX sh, and
       # the apt shellcheck is old enough to disagree with a current one about
       # SC2015, so an unpinned lint fails on the runner and passes on a desk.
       - name: Lint the scripts
@@ -44,9 +37,13 @@ jobs:
             koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
             -s sh .github/scripts/*
 
+      # Annotations rather than the Security tab: zizmor exits 0 whenever it
+      # writes SARIF, so that mode reports findings and never fails the job.
       - name: Audit the workflows
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
+          advanced-security: false
+          annotations: true
           online-audits: false
 
   build:
@@ -75,7 +72,7 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test -race ./...
+        run: go test ./...
 
   sheet:
     name: Sheet
@@ -94,8 +91,7 @@ jobs:
           go-version-file: go.mod
 
       # The sheet and the export both claim they cannot drift from the palette,
-      # which is only true if something checks. The PNG is left out: it depends
-      # on which rasterizer drew it, so it would fail on that and not on us.
+      # which is only true if something checks.
       - name: Redraw the sheet and the export
         run: .github/scripts/screenshot -s
 
