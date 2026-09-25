@@ -249,9 +249,9 @@ func (s *spec) resolve() (*Palette, error) {
 	for i, a := range s.Accents {
 		text := s.Renditions.Text
 
-		// NOTE(@azazeal): the override moves the text and nothing else. It is
-		// about how a hue reads at the text lightness, so carrying it into the
-		// grounds would put them at four lightnesses and invert severity.
+		// NOTE: the override moves the text and nothing else. It is about how a
+		// hue reads at the text lightness, so carrying it into the grounds
+		// would put them at four lightnesses and invert severity.
 		if a.Lightness > 0 {
 			text.Lightness = a.Lightness
 		}

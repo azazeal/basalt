@@ -28,10 +28,9 @@ jobs:
         with:
           args: -color
 
-      # NOTE(@azazeal): pinned to v0.11.0, not the runner's. The scripts are
-      # POSIX sh, and the apt shellcheck is old enough to disagree with a
-      # current one about SC2015, so an unpinned lint fails on the runner and
-      # passes on a desk.
+      # NOTE: pinned to v0.11.0, not the runner's. The scripts are POSIX sh, and
+      # the apt shellcheck is old enough to disagree with a current one about
+      # SC2015, so an unpinned lint fails on the runner and passes on a desk.
       - name: Lint the scripts
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt \

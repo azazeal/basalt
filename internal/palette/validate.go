@@ -6,9 +6,9 @@ import (
 	"slices"
 )
 
-// NOTE(@azazeal): between these two nothing reads on a fill, dark text and
-// light alike, with the floor around 52. Anything filled with is checked
-// against the band rather than trusted.
+// Between these two nothing reads on a fill, dark text and light alike, with
+// the floor around 52. Anything filled with is checked against the band rather
+// than trusted.
 const trapLo, trapHi = 49.0, 58.0
 
 // validate rejects a palette that cannot mean what it says. Loud on purpose:

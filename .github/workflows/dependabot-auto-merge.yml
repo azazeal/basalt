@@ -1,8 +1,8 @@
 name: Dependabot auto-merge
 
-# NOTE(@azazeal): pull_request_target because a Dependabot pull_request gets a
-# read-only token and cannot turn auto-merge on. Safe only while nothing here
-# checks the pull request out, so do not add a checkout step.
+# NOTE: pull_request_target because a Dependabot pull_request gets a read-only
+# token and cannot turn auto-merge on. Safe only while nothing here checks the
+# pull request out, so do not add a checkout step.
 on: pull_request_target # zizmor: ignore[dangerous-triggers]
 
 permissions:

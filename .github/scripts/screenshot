@@ -69,18 +69,18 @@ H=$(printf '%s\n' "$dims" | sed -n 2p)
 # pass it off as this run's.
 rm -f "$PNG"
 
-# WARN(@azazeal): not ImageMagick. Its SVG renderer restarts every <tspan> at
-# the parent's x instead of advancing, so the code sample comes out as
-# overlapping words. It draws the swatches correctly, which hides the breakage.
+# NOTE: not ImageMagick. Its SVG renderer restarts every <tspan> at the parent's
+# x instead of advancing, so the code sample comes out as overlapping words. It
+# draws the swatches correctly, which hides the breakage.
 if command -v rsvg-convert >/dev/null; then
   rsvg-convert -w "$W" -h "$H" -o "$PNG" "$SVG"
 elif command -v resvg >/dev/null; then
   resvg -w "$W" "$SVG" "$PNG"
 elif chrome=$(command -v chromium || command -v chromium-browser || command -v google-chrome); then
-  # NOTE(@azazeal): the output path must be a plain directory under $HOME. A
-  # snap Chromium cannot write to /tmp at all, and its home interface excludes
-  # dotted directories, so both usual scratch locations fail with a bare
-  # "Permission denied".
+  # NOTE: the output path must be a plain directory under $HOME. A snap Chromium
+  # cannot write to /tmp at all, and its home interface excludes dotted
+  # directories, so both usual scratch locations fail with a bare "Permission
+  # denied".
   "$chrome" --headless --disable-gpu --no-sandbox --hide-scrollbars \
     --force-device-scale-factor=1 \
     --window-size="$W,$H" \
