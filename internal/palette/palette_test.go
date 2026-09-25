@@ -147,6 +147,10 @@ func TestValidate(t *testing.T) {
 				s.Renditions.Container.Against = "raised"
 			},
 		},
+		25: { // a reason for an override that is not there
+			spoil:   func(s *spec) { s.Accents[0].Why = "reads pink" },
+			wantErr: true,
+		},
 	}
 
 	for caseIndex, kase := range cases {
