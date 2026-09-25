@@ -265,7 +265,7 @@ func (s *sheet) accents() {
 		mid := top + accentRow/2 - 4
 
 		s.text(margin, mid, body, a.Name, size(14), weight("600"))
-		s.text(margin, mid+16, muted, wrapNote(a.Note), size(11))
+		s.text(margin, mid+16, muted, clip(a.Note), size(11))
 
 		// An accent off the common lightness says so here too: the sheet is
 		// what gets looked at.
@@ -308,20 +308,22 @@ func (s *sheet) accents() {
 	s.y += sectionGap - rowGap
 }
 
-// wrapNote cuts a note at the last space that fits: one line, no layout
-// engine.
-func wrapNote(note string) string {
+// clip cuts a note at the last space that fits and marks the cut: one line, no
+// layout engine.
+func clip(note string) string {
 	const fits = 48
 
-	if len(note) <= fits {
+	r := []rune(note)
+	if len(r) <= fits {
 		return note
 	}
 
-	if i := strings.LastIndex(note[:fits], " "); i > 0 {
-		return note[:i] + "…"
+	cut := string(r[:fits])
+	if i := strings.LastIndex(cut, " "); i > 0 {
+		return cut[:i] + "…"
 	}
 
-	return note[:fits] + "…"
+	return cut + "…"
 }
 
 // span is a run of characters and where its color comes from: an accent by
