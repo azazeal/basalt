@@ -198,8 +198,16 @@ type accentSpec struct {
 // Load reads a palette from a TOML file and resolves it.
 func Load(path string) (*Palette, error) {
 	var s spec
-	if _, err := toml.DecodeFile(path, &s); err != nil {
+
+	md, err := toml.DecodeFile(path, &s)
+	if err != nil {
 		return nil, fmt.Errorf("palette: reading %s: %w", path, err)
+	}
+
+	// A misspelt key is not an error to the decoder: the field it meant keeps
+	// its zero, which reads as "not set" and resolves to a plausible color.
+	if keys := md.Undecoded(); len(keys) > 0 {
+		return nil, fmt.Errorf("palette: %s: unknown key %q", path, keys[0].String())
 	}
 
 	if err := s.validate(); err != nil {

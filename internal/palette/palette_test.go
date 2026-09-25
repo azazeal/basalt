@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -209,9 +210,64 @@ func TestResolveCapsChroma(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "palette.toml")
+	p, err := Load(write(t, sample))
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
 
-	const src = `
+	page, ok := p.Surface("page")
+	if !ok {
+		t.Fatal("the resolved palette has no surface named \"page\"")
+	}
+
+	if got, want := page.Hex(), "#0F1217"; got != want {
+		t.Errorf("page = %s, want %s", got, want)
+	}
+
+	blue, ok := p.Accent("blue")
+	if !ok {
+		t.Fatal("the resolved palette has no accent named \"blue\"")
+	}
+
+	if got, want := blue.Note, "functions, focus"; got != want {
+		t.Errorf("blue's note = %q, want %q", got, want)
+	}
+}
+
+func TestLoadRejects(t *testing.T) {
+	cases := []struct {
+		old, new string
+	}{
+		0: { // a ladder that doubles back, which validate has to catch
+			old: "lightness = 76.8",
+			new: "lightness = 10.0",
+		},
+		1: { // a misspelt key, which would decode to nothing
+			old: "hue = 245.5",
+			new: "hue = 245.5\nlightnes = 68.0",
+		},
+		2: { // a misspelt key inside an inline table
+			old: "wash = { lightness = 26.0,",
+			new: "wash = { lightnes = 26.0,",
+		},
+	}
+
+	for caseIndex, kase := range cases {
+		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
+			src := strings.Replace(sample, kase.old, kase.new, 1)
+			if src == sample {
+				t.Fatalf("%q is not in the sample", kase.old)
+			}
+
+			if _, err := Load(write(t, src)); err == nil {
+				t.Error("Load accepted it")
+			}
+		})
+	}
+}
+
+// sample is a palette that loads, for a case to spoil.
+const sample = `
 [surfaces]
 hue = 264.0
 chroma = 0.042
@@ -236,68 +292,14 @@ hue = 245.5
 note = "functions, focus"
 `
 
-	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
-		t.Fatalf("writing the palette failed: %v", err)
-	}
+// write puts a palette where Load can read it.
+func write(t *testing.T, src string) string {
+	t.Helper()
 
-	p, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-
-	page, ok := p.Surface("page")
-	if !ok {
-		t.Fatal("the resolved palette has no surface named \"page\"")
-	}
-
-	if got, want := page.Hex(), "#0F1217"; got != want {
-		t.Errorf("page = %s, want %s", got, want)
-	}
-
-	blue, ok := p.Accent("blue")
-	if !ok {
-		t.Fatal("the resolved palette has no accent named \"blue\"")
-	}
-
-	if got, want := blue.Note, "functions, focus"; got != want {
-		t.Errorf("blue's note = %q, want %q", got, want)
-	}
-}
-
-func TestLoadRejectsAnUnsoundPalette(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "palette.toml")
-
-	// A ladder that doubles back, which validate has to catch on the way in
-	// rather than leave for a port to render.
-	const src = `
-[surfaces]
-hue = 264.0
-chroma = 0.042
-
-[[surfaces.step]]
-name = "page"
-lightness = 40.0
-
-[[surfaces.step]]
-name = "body"
-lightness = 20.0
-
-[renditions]
-text = { lightness = 74.0, chroma = 0.90, max = 0.160 }
-deep = { lightness = 43.0, chroma = 0.85, max = 0.150 }
-wash = { lightness = 26.0, over = 0.040 }
-container = { lightness = 34.0, over = 0.040 }
-
-[[accent]]
-name = "blue"
-hue = 245.5
-`
-
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 		t.Fatalf("writing the palette failed: %v", err)
 	}
 
-	if _, err := Load(path); err == nil {
-		t.Error("Load accepted a ladder that doubles back")
-	}
+	return path
 }
