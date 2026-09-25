@@ -9,6 +9,7 @@ package render
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/azazeal/basalt/internal/palette"
@@ -76,32 +77,35 @@ func SVG(p *palette.Palette) []byte {
 	return out.Bytes()
 }
 
-// esc escapes the three characters XML text cannot hold literally. Quotes are
-// left alone: legal in a text node, and some renderers mangle the entity.
-func esc(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
-}
+var (
+	// esc escapes the three characters XML text cannot hold literally. Quotes
+	// are left alone: legal in a text node, and some renderers mangle the
+	// entity.
+	esc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace
 
-// attr escapes a string for use inside a double-quoted attribute.
-func attr(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", `"`, "&quot;").Replace(s)
-}
+	// attr escapes a string for use inside a double-quoted attribute.
+	attr = strings.NewReplacer("&", "&amp;", "<", "&lt;", `"`, "&quot;").Replace
+)
 
-// hex returns a surface by name, or a color from nowhere in the palette, so a
-// rename shows up on the sheet rather than failing quietly.
+// missing is a color from nowhere in the palette, for a name it does not have,
+// so a rename shows up on the sheet rather than failing quietly.
+const missing = "#FF00FF"
+
+// hex returns a surface by name.
 func (s *sheet) hex(name string) string {
 	c, ok := s.p.Surface(name)
 	if !ok {
-		return "#FF00FF"
+		return missing
 	}
 
 	return c.Hex()
 }
 
+// accentHex returns an accent's text value by name.
 func (s *sheet) accentHex(name string) string {
 	a, ok := s.p.Accent(name)
 	if !ok {
-		return "#FF00FF"
+		return missing
 	}
 
 	return a.Text.Hex()
@@ -110,8 +114,8 @@ func (s *sheet) accentHex(name string) string {
 type opt func(*strings.Builder)
 
 func size(v int) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` font-size="%d"`, v) } }
-func family(v string) opt {
-	return func(b *strings.Builder) { fmt.Fprintf(b, ` font-family="%s"`, attr(v)) }
+func monospace() opt {
+	return func(b *strings.Builder) { fmt.Fprintf(b, ` font-family="%s"`, attr(mono)) }
 }
 func anchor(v string) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` text-anchor="%s"`, v) } }
 func weight(v string) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` font-weight="%s"`, v) } }
@@ -179,19 +183,19 @@ func (s *sheet) fileIcon(x, y int, stroke string) {
 func (s *sheet) undercurl(x, y, w int, stroke string) {
 	const step = 4
 
-	d := fmt.Sprintf("M%d,%d", x, y)
-	for i := 0; i < w/step; i++ {
-		up := i%2 == 0
+	var d strings.Builder
+	fmt.Fprintf(&d, "M%d,%d", x, y)
 
+	for i := range w / step {
 		dy := 3
-		if up {
+		if i%2 == 0 {
 			dy = -3
 		}
 
-		d += fmt.Sprintf(" q%d,%d %d,0", step/2, dy, step)
+		fmt.Fprintf(&d, " q%d,%d %d,0", step/2, dy, step)
 	}
 
-	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d, stroke)
+	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d.String(), stroke)
 }
 
 func (s *sheet) title() {
@@ -243,7 +247,7 @@ func (s *sheet) surfaces() {
 		mid := s.y + (surfaceRow-rowGap)/2 + 4
 
 		s.text(margin+110, mid, s.hex("body"), c.Name, size(13), weight("500"))
-		s.text(margin+200, mid, s.hex("faint"), c.Hex(), size(12), family(mono))
+		s.text(margin+200, mid, s.hex("faint"), c.Hex(), size(12), monospace())
 		s.text(margin+300, mid, s.hex("muted"), c.Note, size(12))
 
 		s.y += surfaceRow
@@ -293,14 +297,14 @@ func (s *sheet) accents() {
 			x := margin + labelColumn + i*(w+rowGap)
 
 			s.swatch(x, top, w, accentRow-rowGap, 5, c.ground)
-			s.text(x+14, mid+4, c.ink, "Aa", size(15), family(mono), weight("500"))
-			s.text(x+44, mid+4, c.ink, c.hex, size(11), family(mono))
+			s.text(x+14, mid+4, c.ink, "Aa", size(15), monospace(), weight("500"))
+			s.text(x+44, mid+4, c.ink, c.hex, size(11), monospace())
 		}
 
 		// The text value again, as a fill with the deepest surface on it.
 		x := margin + labelColumn
 		s.rect(x+w-50, top+8, 40, accentRow-rowGap-16, 4, a.Text.Hex())
-		s.text(x+w-30, mid+4, sunk, "fill", size(10), family(mono), anchor("middle"), weight("600"))
+		s.text(x+w-30, mid+4, sunk, "fill", size(10), monospace(), anchor("middle"), weight("600"))
 
 		s.y += accentRow
 	}
@@ -488,7 +492,7 @@ func (s *sheet) tree(top, h int) {
 			s.fileIcon(x+12, y-4, fill)
 		}
 
-		s.text(x+28, y, fill, f.name, size(11), family(mono))
+		s.text(x+28, y, fill, f.name, size(11), monospace())
 	}
 }
 
@@ -497,9 +501,9 @@ func (s *sheet) tree(top, h int) {
 func (s *sheet) tabs(top int) {
 	s.rect(pane, top, paneW, tabStrip, 0, s.hex("sunk"))
 	s.rect(pane, top, 110, tabStrip, 0, s.hex("raised"))
-	s.text(pane+16, top+20, s.hex("body"), "oklch.go", size(11), family(mono), weight("500"))
-	s.text(pane+130, top+20, s.hex("faint"), "palette.go", size(11), family(mono))
-	s.text(pane+228, top+20, s.accentHex("yellow"), "basalt.toml ●", size(11), family(mono))
+	s.text(pane+16, top+20, s.hex("body"), "oklch.go", size(11), monospace(), weight("500"))
+	s.text(pane+130, top+20, s.hex("faint"), "palette.go", size(11), monospace())
+	s.text(pane+228, top+20, s.accentHex("yellow"), "basalt.toml ●", size(11), monospace())
 }
 
 // file draws the page and the sample on it.
@@ -539,7 +543,7 @@ func (s *sheet) file(top, h int) {
 			fill, w = s.hex("body"), "600"
 		}
 
-		s.text(pane+52, y, fill, fmt.Sprint(i+1), size(11), family(mono), anchor("end"), weight(w))
+		s.text(pane+52, y, fill, strconv.Itoa(i+1), size(11), monospace(), anchor("end"), weight(w))
 
 		if len(line) > 0 {
 			s.line(pane+68, y, line)
@@ -566,11 +570,11 @@ func (s *sheet) file(top, h int) {
 func (s *sheet) statusLine(top int) {
 	s.rect(margin, top, content, statusBar, 0, s.hex("raised"))
 	s.rect(margin, top, 76, statusBar, 0, s.accentHex("blue"))
-	s.text(margin+38, top+18, s.hex("sunk"), "NORMAL", size(11), family(mono),
+	s.text(margin+38, top+18, s.hex("sunk"), "NORMAL", size(11), monospace(),
 		anchor("middle"), weight("700"))
-	s.text(margin+92, top+18, s.accentHex("orange"), "main ●", size(11), family(mono))
+	s.text(margin+92, top+18, s.accentHex("orange"), "main ●", size(11), monospace())
 	s.text(margin+content-16, top+18, s.hex("muted"), "go · utf-8 · 8:14", size(11),
-		family(mono), anchor("end"))
+		monospace(), anchor("end"))
 }
 
 // sample is the file the window shows.
@@ -633,7 +637,7 @@ func (s *sheet) modes() {
 		// The mode block: the accent filled, with the deepest surface on it.
 		s.rect(margin, y, blockW, rowH, 4, a.Text.Hex())
 		s.text(margin+blockW/2, y+rowH/2+4, sunk, m.name,
-			size(11), family(mono), anchor("middle"), weight("700"))
+			size(11), monospace(), anchor("middle"), weight("700"))
 
 		// The caret, which is the same value again in a narrower shape.
 		s.rect(margin+blockW+gap, y+7, 9, rowH-14, 1, a.Text.Hex())
@@ -696,7 +700,7 @@ func (s *sheet) bar() {
 
 		s.rect(x, y, w, ih, 5, s.hex("lifted"))
 		s.text(x+w/2, y+ih/2+4, s.accentHex(chip.accent), chip.label, size(12),
-			family(mono), anchor("middle"), weight("500"))
+			monospace(), anchor("middle"), weight("500"))
 
 		x += w + 8
 	}
@@ -719,8 +723,6 @@ func (s *sheet) bar() {
 
 		s.rect(right-w, y, w, ih, 5, a.Container.Hex())
 		s.text(right-w+14, y+ih/2+4, a.Text.Hex(), "3 updates pending", size(12), weight("500"))
-
-		right -= w + 8
 	}
 
 	s.y = top + h + sectionGap
