@@ -36,7 +36,7 @@ func (c Color) Hex() string {
 
 // RGB returns the color in sRGB.
 func (c Color) RGB() oklch.RGB {
-	return c.LCh.Fit().RGB()
+	return c.LCh.RGB()
 }
 
 // Accent is one place on the wheel and the four renditions it resolves to. A
@@ -52,10 +52,10 @@ type Accent struct {
 
 	Hue float64
 
-	Text      Color
-	Deep      Color
-	Wash      Color
-	Container Color
+	Text      oklch.LCh
+	Deep      oklch.LCh
+	Wash      oklch.LCh
+	Container oklch.LCh
 }
 
 // Surface returns the named surface step.
@@ -272,10 +272,10 @@ func (s *spec) resolve() (*Palette, error) {
 			Why:  a.Why,
 			Hue:  a.Hue,
 
-			Text:      Color{Name: a.Name, Note: a.Note, LCh: text.at(a.Hue)},
-			Deep:      Color{Name: a.Name, Note: a.Note, LCh: s.Renditions.Deep.at(a.Hue)},
-			Wash:      Color{Name: a.Name, Note: a.Note, LCh: wash},
-			Container: Color{Name: a.Name, Note: a.Note, LCh: container},
+			Text:      text.at(a.Hue),
+			Deep:      s.Renditions.Deep.at(a.Hue),
+			Wash:      wash,
+			Container: container,
 		}
 	}
 

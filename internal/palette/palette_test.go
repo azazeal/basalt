@@ -192,32 +192,32 @@ func TestResolve(t *testing.T) {
 		// its place on the wheel and differ only in lightness and chroma.
 		for _, r := range []struct {
 			what string
-			c    Color
+			c    oklch.LCh
 		}{
 			{"text", a.Text},
 			{"deep", a.Deep},
 			{"wash", a.Wash},
 			{"container", a.Container},
 		} {
-			if math.Abs(r.c.LCh.H-a.Hue) > 1e-9 {
-				t.Errorf("accent %q's %s sits at hue %.4f, want %.4f", a.Name, r.what, r.c.LCh.H, a.Hue)
+			if math.Abs(r.c.H-a.Hue) > 1e-9 {
+				t.Errorf("accent %q's %s sits at hue %.4f, want %.4f", a.Name, r.what, r.c.H, a.Hue)
 			}
 
-			if !r.c.LCh.RGB().InGamut() {
+			if !r.c.RGB().InGamut() {
 				t.Errorf("accent %q's %s is a color sRGB cannot show", a.Name, r.what)
 			}
 		}
 
-		if !(a.Deep.LCh.L < a.Text.LCh.L) {
+		if !(a.Deep.L < a.Text.L) {
 			t.Errorf("accent %q's deep rendition is not darker than its text one", a.Name)
 		}
 
-		if !(a.Container.LCh.L < a.Deep.LCh.L) {
+		if !(a.Container.L < a.Deep.L) {
 			t.Errorf("accent %q's container is not darker than its deep rendition", a.Name)
 		}
 
 		// The one you look through has to sit under the one you look at.
-		if !(a.Wash.LCh.L < a.Container.LCh.L) {
+		if !(a.Wash.L < a.Container.L) {
 			t.Errorf("accent %q's wash is not darker than its container", a.Name)
 		}
 	}
@@ -235,11 +235,11 @@ func TestResolveClears(t *testing.T) {
 	raised, _ := p.Surface("raised")
 
 	for _, a := range p.Accents {
-		if got, want := oklch.Difference(a.Wash.LCh, raised.LCh), s.Renditions.Wash.Clear; got < want {
+		if got, want := oklch.Difference(a.Wash, raised.LCh), s.Renditions.Wash.Clear; got < want {
 			t.Errorf("accent %q's wash is %.4f from raised, want at least %.4f", a.Name, got, want)
 		}
 
-		if got, want := oklch.Difference(a.Container.LCh, raised.LCh), s.Renditions.Container.Clear; got < want {
+		if got, want := oklch.Difference(a.Container, raised.LCh), s.Renditions.Container.Clear; got < want {
 			t.Errorf("accent %q's container is %.4f from raised, want at least %.4f", a.Name, got, want)
 		}
 	}
@@ -271,13 +271,13 @@ func TestResolveCapsChroma(t *testing.T) {
 	}
 
 	magenta, _ := p.Accent("magenta")
-	if got, want := magenta.Text.LCh.C, s.Renditions.Text.Max; math.Abs(got-want) > 1e-9 {
+	if got, want := magenta.Text.C, s.Renditions.Text.Max; math.Abs(got-want) > 1e-9 {
 		t.Errorf("magenta's text chroma is %.4f, want it held at the cap of %.4f", got, want)
 	}
 
 	cyan, _ := p.Accent("cyan")
-	if cyan.Text.LCh.C >= s.Renditions.Text.Max {
-		t.Errorf("cyan's text chroma is %.4f, want it under the cap at %.4f", cyan.Text.LCh.C, s.Renditions.Text.Max)
+	if cyan.Text.C >= s.Renditions.Text.Max {
+		t.Errorf("cyan's text chroma is %.4f, want it under the cap at %.4f", cyan.Text.C, s.Renditions.Text.Max)
 	}
 }
 

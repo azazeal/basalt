@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"math"
 
+	"github.com/azazeal/basalt/internal/oklch"
 	"github.com/azazeal/basalt/internal/palette"
 )
 
@@ -76,12 +77,12 @@ func round(v float64, places int) float64 {
 	return math.Round(v*p) / p
 }
 
-func colorOf(c palette.Color) Color {
+func colorOf(c oklch.LCh) Color {
 	return Color{
 		Hex:       c.Hex(),
-		Lightness: round(c.LCh.L*100, 1),
-		Chroma:    round(c.LCh.C, 4),
-		Hue:       round(c.LCh.H, 1),
+		Lightness: round(c.L*100, 1),
+		Chroma:    round(c.C, 4),
+		Hue:       round(c.H, 1),
 	}
 }
 
@@ -94,7 +95,7 @@ func JSON(p *palette.Palette) ([]byte, error) {
 	}
 
 	for i, c := range p.Surfaces {
-		d.Surfaces[i] = Surface{Name: c.Name, Note: c.Note, Color: colorOf(c)}
+		d.Surfaces[i] = Surface{Name: c.Name, Note: c.Note, Color: colorOf(c.LCh)}
 	}
 
 	for i, a := range p.Accents {
