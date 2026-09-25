@@ -91,8 +91,7 @@ jobs:
           go-version-file: go.mod
 
       # The sheet and the export both claim they cannot drift from the palette,
-      # which is only true if something checks. The PNG is left out: it depends
-      # on which rasterizer drew it, so it would fail on that and not on us.
+      # which is only true if something checks.
       - name: Redraw the sheet and the export
         run: .github/scripts/screenshot -s
 
