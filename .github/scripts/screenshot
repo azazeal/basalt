@@ -58,10 +58,6 @@ if [ "$svg_only" = yes ]; then
 fi
 
 # The canvas is read off the drawing, since the sheet grows as the palette does.
-#
-# NOTE(@azazeal): the drawing is one line with no trailing newline, so this
-# cannot be a `read`: read returns non-zero on input that does not end in a
-# newline, having assigned good values, and `set -e` then ends the script.
 dims=$(grep -o 'width="[0-9]*" height="[0-9]*"' "$SVG" | head -1 | grep -o '[0-9][0-9]*')
 W=$(printf '%s\n' "$dims" | sed -n 1p)
 H=$(printf '%s\n' "$dims" | sed -n 2p)

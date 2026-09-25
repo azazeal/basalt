@@ -72,7 +72,7 @@ func SVG(p *palette.Palette) []byte {
 	)
 	fmt.Fprintf(&out, `<rect width="%d" height="%d" fill="%s"/>`, width, height, s.hex("sunk"))
 	out.Write(s.buf.Bytes())
-	out.WriteString(`</svg>`)
+	out.WriteString("</svg>\n")
 
 	return out.Bytes()
 }
