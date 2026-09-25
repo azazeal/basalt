@@ -77,143 +77,12 @@ func SVG(p *palette.Palette) []byte {
 	return out.Bytes()
 }
 
-var (
-	// esc escapes the three characters XML text cannot hold literally. Quotes
-	// are left alone: legal in a text node, and some renderers mangle the
-	// entity.
-	esc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace
-
-	// attr escapes a string for use inside a double-quoted attribute.
-	attr = strings.NewReplacer("&", "&amp;", "<", "&lt;", `"`, "&quot;").Replace
-)
-
-// missing is a color from nowhere in the palette, for a name it does not have,
-// so a rename shows up on the sheet rather than failing quietly.
-const missing = "#FF00FF"
-
-// hex returns a surface by name.
-func (s *sheet) hex(name string) string {
-	c, ok := s.p.Surface(name)
-	if !ok {
-		return missing
-	}
-
-	return c.Hex()
-}
-
-// accentHex returns an accent's text value by name.
-func (s *sheet) accentHex(name string) string {
-	a, ok := s.p.Accent(name)
-	if !ok {
-		return missing
-	}
-
-	return a.Text.Hex()
-}
-
-type opt func(*strings.Builder)
-
-func size(v int) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` font-size="%d"`, v) } }
-func monospace() opt {
-	return func(b *strings.Builder) { fmt.Fprintf(b, ` font-family="%s"`, attr(mono)) }
-}
-func anchor(v string) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` text-anchor="%s"`, v) } }
-func weight(v string) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` font-weight="%s"`, v) } }
-func italic() opt         { return func(b *strings.Builder) { b.WriteString(` font-style="italic"`) } }
-
-func (s *sheet) text(x, y int, fill, str string, opts ...opt) {
-	var b strings.Builder
-	for _, o := range opts {
-		o(&b)
-	}
-
-	fmt.Fprintf(&s.buf, `<text x="%d" y="%d" fill="%s"%s>%s</text>`, x, y, fill, b.String(), esc(str))
-}
-
-func (s *sheet) rect(x, y, w, h, r int, fill string) {
-	fmt.Fprintf(&s.buf, `<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s"/>`, x, y, w, h, r, fill)
-}
-
-// swatch is a rect with a thin stroke, which is what parts the deepest
-// surfaces from the sheet they are drawn on.
-func (s *sheet) swatch(x, y, w, h, r int, fill string) {
-	fmt.Fprintf(&s.buf,
-		`<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s" stroke="%s" stroke-width="1"/>`,
-		x, y, w, h, r, fill, s.hex("lifted"),
-	)
-}
-
-// chevron draws the triangle before a folder, right when shut and down when
-// open. It takes the mark step rather than the folder's color: which way it
-// points is all it says, and it should not compete with the name.
-func (s *sheet) chevron(x, y int, open bool) {
-	var d string
-	if open {
-		d = fmt.Sprintf("M%d,%d L%d,%d L%d,%d Z", x-3, y-1, x+3, y-1, x, y+3)
-	} else {
-		d = fmt.Sprintf("M%d,%d L%d,%d L%d,%d Z", x-1, y-3, x+3, y, x-1, y+3)
-	}
-
-	fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, d, s.hex("faint"))
-}
-
-// folderIcon draws a folder, filled when open and outlined when shut. Drawn
-// rather than typed, since a glyph would want a font the reader has no reason
-// to have.
-func (s *sheet) folderIcon(x, y int, open bool, fill string) {
-	d := fmt.Sprintf("M%d,%d h4 l1,2 h5 v6 h-10 z", x-5, y-5)
-	if open {
-		fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, d, fill)
-
-		return
-	}
-
-	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d, fill)
-}
-
-// fileIcon draws a page with the corner turned down.
-func (s *sheet) fileIcon(x, y int, stroke string) {
-	fmt.Fprintf(&s.buf,
-		`<path d="M%d,%d h5 l3,3 v6 h-8 z" fill="none" stroke="%s" stroke-width="1"/>`,
-		x-4, y-5, stroke)
-}
-
-// undercurl draws the wave under a token. A shape rather than a color change,
-// because what the token is stays true while the server complains about it.
-func (s *sheet) undercurl(x, y, w int, stroke string) {
-	const step = 4
-
-	var d strings.Builder
-	fmt.Fprintf(&d, "M%d,%d", x, y)
-
-	for i := range w / step {
-		dy := 3
-		if i%2 == 0 {
-			dy = -3
-		}
-
-		fmt.Fprintf(&d, " q%d,%d %d,0", step/2, dy, step)
-	}
-
-	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d.String(), stroke)
-}
-
 func (s *sheet) title() {
 	s.text(margin, s.y+30, s.hex("bright"), "basalt", size(34), weight("600"))
 	s.text(margin, s.y+56, s.hex("muted"),
 		"a dark theme, named after what magma becomes when it cools", size(14))
 
 	s.y += 56 + sectionGap
-}
-
-func (s *sheet) heading(str, note string) {
-	s.text(margin, s.y, s.hex("dim"), strings.ToUpper(str), size(12), weight("600"))
-
-	if note != "" {
-		s.text(margin+content, s.y, s.hex("faint"), note, size(12), anchor("end"))
-	}
-
-	s.y += 22
 }
 
 // surfaces draws the ladder as one row of blocks, then again as rows carrying
@@ -328,71 +197,6 @@ func clip(note string) string {
 	}
 
 	return cut + "…"
-}
-
-// span is a run of characters and where its color comes from: an accent by
-// name, or a surface when accent is empty.
-type span struct {
-	text    string
-	accent  string
-	surface string
-	italic  bool
-}
-
-func (s *sheet) spanFill(sp span) string {
-	if sp.accent != "" {
-		return s.accentHex(sp.accent)
-	}
-
-	return s.hex(sp.surface)
-}
-
-// tabStop is one level of indent. SVG has no tab stops and renders a tab as a
-// single space, so an indent has to be spelled out.
-const tabStop = "    "
-
-// charWidth is what one column of the sample is worth. Lines are drawn with an
-// explicit textLength, pinning every character to a known column rather than to
-// whatever monospace the reader has. That is what lets a selection be drawn as
-// a rectangle over the right characters.
-const charWidth = 8
-
-// columns counts what a run of spans occupies, with tabs already expanded.
-func columns(spans []span) int {
-	n := 0
-	for _, sp := range spans {
-		n += len([]rune(strings.ReplaceAll(sp.text, "\t", tabStop)))
-	}
-
-	return n
-}
-
-// line draws a run of spans as one text element. Ligatures are off: a font
-// that draws != as one glyph shows something the file does not say.
-func (s *sheet) line(x, y int, spans []span) {
-	n := columns(spans)
-	if n == 0 {
-		return
-	}
-
-	fmt.Fprintf(&s.buf,
-		`<text x="%d" y="%d" font-size="%d" font-family="%s" textLength="%d" xml:space="preserve"`+
-			` style="font-variant-ligatures:none">`,
-		x, y, codeSize, attr(mono), n*charWidth,
-	)
-
-	for _, sp := range spans {
-		style := ""
-		if sp.italic {
-			style = ` font-style="italic"`
-		}
-
-		text := strings.ReplaceAll(sp.text, "\t", tabStop)
-
-		fmt.Fprintf(&s.buf, `<tspan fill="%s"%s>%s</tspan>`, s.spanFill(sp), style, esc(text))
-	}
-
-	s.buf.WriteString(`</text>`)
 }
 
 // window draws the theme as an editor: a title bar, a tree beside the file, a
@@ -746,3 +550,199 @@ func (s *sheet) footer() {
 		s.y += 17
 	}
 }
+
+func (s *sheet) heading(str, note string) {
+	s.text(margin, s.y, s.hex("dim"), strings.ToUpper(str), size(12), weight("600"))
+
+	if note != "" {
+		s.text(margin+content, s.y, s.hex("faint"), note, size(12), anchor("end"))
+	}
+
+	s.y += 22
+}
+
+func (s *sheet) text(x, y int, fill, str string, opts ...opt) {
+	var b strings.Builder
+	for _, o := range opts {
+		o(&b)
+	}
+
+	fmt.Fprintf(&s.buf, `<text x="%d" y="%d" fill="%s"%s>%s</text>`, x, y, fill, b.String(), esc(str))
+}
+
+type opt func(*strings.Builder)
+
+func size(v int) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` font-size="%d"`, v) } }
+func monospace() opt {
+	return func(b *strings.Builder) { fmt.Fprintf(b, ` font-family="%s"`, attr(mono)) }
+}
+func anchor(v string) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` text-anchor="%s"`, v) } }
+func weight(v string) opt { return func(b *strings.Builder) { fmt.Fprintf(b, ` font-weight="%s"`, v) } }
+func italic() opt         { return func(b *strings.Builder) { b.WriteString(` font-style="italic"`) } }
+
+func (s *sheet) rect(x, y, w, h, r int, fill string) {
+	fmt.Fprintf(&s.buf, `<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s"/>`, x, y, w, h, r, fill)
+}
+
+// swatch is a rect with a thin stroke, which is what parts the deepest
+// surfaces from the sheet they are drawn on.
+func (s *sheet) swatch(x, y, w, h, r int, fill string) {
+	fmt.Fprintf(&s.buf,
+		`<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s" stroke="%s" stroke-width="1"/>`,
+		x, y, w, h, r, fill, s.hex("lifted"),
+	)
+}
+
+// span is a run of characters and where its color comes from: an accent by
+// name, or a surface when accent is empty.
+type span struct {
+	text    string
+	accent  string
+	surface string
+	italic  bool
+}
+
+// tabStop is one level of indent. SVG has no tab stops and renders a tab as a
+// single space, so an indent has to be spelled out.
+const tabStop = "    "
+
+// charWidth is what one column of the sample is worth. Lines are drawn with an
+// explicit textLength, pinning every character to a known column rather than to
+// whatever monospace the reader has. That is what lets a selection be drawn as
+// a rectangle over the right characters.
+const charWidth = 8
+
+// line draws a run of spans as one text element. Ligatures are off: a font
+// that draws != as one glyph shows something the file does not say.
+func (s *sheet) line(x, y int, spans []span) {
+	n := columns(spans)
+	if n == 0 {
+		return
+	}
+
+	fmt.Fprintf(&s.buf,
+		`<text x="%d" y="%d" font-size="%d" font-family="%s" textLength="%d" xml:space="preserve"`+
+			` style="font-variant-ligatures:none">`,
+		x, y, codeSize, attr(mono), n*charWidth,
+	)
+
+	for _, sp := range spans {
+		style := ""
+		if sp.italic {
+			style = ` font-style="italic"`
+		}
+
+		text := strings.ReplaceAll(sp.text, "\t", tabStop)
+
+		fmt.Fprintf(&s.buf, `<tspan fill="%s"%s>%s</tspan>`, s.spanFill(sp), style, esc(text))
+	}
+
+	s.buf.WriteString(`</text>`)
+}
+
+// columns counts what a run of spans occupies, with tabs already expanded.
+func columns(spans []span) int {
+	n := 0
+	for _, sp := range spans {
+		n += len([]rune(strings.ReplaceAll(sp.text, "\t", tabStop)))
+	}
+
+	return n
+}
+
+func (s *sheet) spanFill(sp span) string {
+	if sp.accent != "" {
+		return s.accentHex(sp.accent)
+	}
+
+	return s.hex(sp.surface)
+}
+
+// chevron draws the triangle before a folder, right when shut and down when
+// open. It takes the mark step rather than the folder's color: which way it
+// points is all it says, and it should not compete with the name.
+func (s *sheet) chevron(x, y int, open bool) {
+	var d string
+	if open {
+		d = fmt.Sprintf("M%d,%d L%d,%d L%d,%d Z", x-3, y-1, x+3, y-1, x, y+3)
+	} else {
+		d = fmt.Sprintf("M%d,%d L%d,%d L%d,%d Z", x-1, y-3, x+3, y, x-1, y+3)
+	}
+
+	fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, d, s.hex("faint"))
+}
+
+// folderIcon draws a folder, filled when open and outlined when shut. Drawn
+// rather than typed, since a glyph would want a font the reader has no reason
+// to have.
+func (s *sheet) folderIcon(x, y int, open bool, fill string) {
+	d := fmt.Sprintf("M%d,%d h4 l1,2 h5 v6 h-10 z", x-5, y-5)
+	if open {
+		fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, d, fill)
+
+		return
+	}
+
+	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d, fill)
+}
+
+// fileIcon draws a page with the corner turned down.
+func (s *sheet) fileIcon(x, y int, stroke string) {
+	fmt.Fprintf(&s.buf,
+		`<path d="M%d,%d h5 l3,3 v6 h-8 z" fill="none" stroke="%s" stroke-width="1"/>`,
+		x-4, y-5, stroke)
+}
+
+// undercurl draws the wave under a token. A shape rather than a color change,
+// because what the token is stays true while the server complains about it.
+func (s *sheet) undercurl(x, y, w int, stroke string) {
+	const step = 4
+
+	var d strings.Builder
+	fmt.Fprintf(&d, "M%d,%d", x, y)
+
+	for i := range w / step {
+		dy := 3
+		if i%2 == 0 {
+			dy = -3
+		}
+
+		fmt.Fprintf(&d, " q%d,%d %d,0", step/2, dy, step)
+	}
+
+	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d.String(), stroke)
+}
+
+// missing is a color from nowhere in the palette, for a name it does not have,
+// so a rename shows up on the sheet rather than failing quietly.
+const missing = "#FF00FF"
+
+// hex returns a surface by name.
+func (s *sheet) hex(name string) string {
+	c, ok := s.p.Surface(name)
+	if !ok {
+		return missing
+	}
+
+	return c.Hex()
+}
+
+// accentHex returns an accent's text value by name.
+func (s *sheet) accentHex(name string) string {
+	a, ok := s.p.Accent(name)
+	if !ok {
+		return missing
+	}
+
+	return a.Text.Hex()
+}
+
+var (
+	// esc escapes the three characters XML text cannot hold literally. Quotes
+	// are left alone: legal in a text node, and some renderers mangle the
+	// entity.
+	esc = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace
+
+	// attr escapes a string for use inside a double-quoted attribute.
+	attr = strings.NewReplacer("&", "&amp;", "<", "&lt;", `"`, "&quot;").Replace
+)
