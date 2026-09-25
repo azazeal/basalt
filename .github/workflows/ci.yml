@@ -10,6 +10,9 @@ permissions:
   contents: read
 
 jobs:
+  # NOTE: the job names are the checks the main ruleset requires. Renaming one,
+  # or folding one into another, blocks every pull request until the ruleset
+  # is changed to match.
   lint:
     name: Lint
     runs-on: ubuntu-latest
