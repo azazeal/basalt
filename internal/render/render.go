@@ -153,27 +153,25 @@ func (s *sheet) chevron(x, y int, open bool) {
 	fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, d, s.hex("faint"))
 }
 
-// folder draws the icon before a name: filled when open, outlined when shut,
-// a page for a file. Drawn rather than typed, since a glyph would want a font
-// the reader has no reason to have.
-func (s *sheet) folder(x, y int, dir, open bool, fill string) {
-	if !dir {
-		// A page, with the corner turned down.
-		fmt.Fprintf(&s.buf,
-			`<path d="M%d,%d h5 l3,3 v6 h-8 z" fill="none" stroke="%s" stroke-width="1"/>`,
-			x-4, y-5, fill)
-
-		return
-	}
-
-	body := fmt.Sprintf("M%d,%d h4 l1,2 h5 v6 h-10 z", x-5, y-5)
+// folderIcon draws a folder, filled when open and outlined when shut. Drawn
+// rather than typed, since a glyph would want a font the reader has no reason
+// to have.
+func (s *sheet) folderIcon(x, y int, open bool, fill string) {
+	d := fmt.Sprintf("M%d,%d h4 l1,2 h5 v6 h-10 z", x-5, y-5)
 	if open {
-		fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, body, fill)
+		fmt.Fprintf(&s.buf, `<path d="%s" fill="%s"/>`, d, fill)
 
 		return
 	}
 
-	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, body, fill)
+	fmt.Fprintf(&s.buf, `<path d="%s" fill="none" stroke="%s" stroke-width="1"/>`, d, fill)
+}
+
+// fileIcon draws a page with the corner turned down.
+func (s *sheet) fileIcon(x, y int, stroke string) {
+	fmt.Fprintf(&s.buf,
+		`<path d="M%d,%d h5 l3,3 v6 h-8 z" fill="none" stroke="%s" stroke-width="1"/>`,
+		x-4, y-5, stroke)
 }
 
 // undercurl draws the wave under a token. A shape rather than a color change,
@@ -483,9 +481,10 @@ func (s *sheet) tree(top, h int) {
 
 		if f.dir {
 			s.chevron(x+2, y-4, f.open)
+			s.folderIcon(x+12, y-4, f.open, fill)
+		} else {
+			s.fileIcon(x+12, y-4, fill)
 		}
-
-		s.folder(x+12, y-4, f.dir, f.open, fill)
 
 		s.text(x+28, y, fill, f.name, size(11), family(mono))
 	}
