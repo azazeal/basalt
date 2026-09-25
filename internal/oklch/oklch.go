@@ -48,24 +48,6 @@ func (c RGB) InGamut() bool {
 	return true
 }
 
-// linear undoes the sRGB transfer function, giving light rather than signal.
-func linear(v float64) float64 {
-	if v <= 0.04045 {
-		return v / 12.92
-	}
-
-	return math.Pow((v+0.055)/1.055, 2.4)
-}
-
-// encode applies the sRGB transfer function, the inverse of [linear].
-func encode(v float64) float64 {
-	if v <= 0.0031308 {
-		return v * 12.92
-	}
-
-	return 1.055*math.Pow(v, 1/2.4) - 0.055
-}
-
 // RGB converts the color to sRGB. The result may fall outside the gamut; see
 // [RGB.InGamut] and [LCh.Fit].
 func (c LCh) RGB() RGB {
@@ -90,13 +72,24 @@ func (c LCh) Hex() string {
 	return c.Fit().RGB().Hex()
 }
 
+// Fit reduces chroma until sRGB can show the color. Lightness and hue are left
+// alone: dropping chroma dulls a color, clamping channels changes it.
+func (c LCh) Fit() LCh {
+	if c.RGB().InGamut() {
+		return c
+	}
+
+	c.C = MaxChroma(c.L, c.H)
+
+	return c
+}
+
 // maxChromaSteps is the bisection depth [MaxChroma] runs to. Fifty halvings
 // land well inside the rounding of an 8-bit channel.
 const maxChromaSteps = 50
 
-// MaxChroma returns the most chroma sRGB can express at a lightness and hue.
-// Asking for a fraction of it keeps every hue as colorful as it can be, rather
-// than holding them all to whatever the narrowest allows.
+// MaxChroma returns how much chroma a color at a lightness and hue can carry
+// before it leaves sRGB.
 func MaxChroma(l, h float64) float64 {
 	lo, hi := 0.0, 0.5
 	for range maxChromaSteps {
@@ -111,32 +104,11 @@ func MaxChroma(l, h float64) float64 {
 	return lo
 }
 
-// Fit reduces chroma until sRGB can show the color. Lightness and hue are left
-// alone: dropping chroma dulls a color, clamping channels changes it.
-func (c LCh) Fit() LCh {
-	if c.RGB().InGamut() {
-		return c
-	}
-
-	c.C = MaxChroma(c.L, c.H)
-
-	return c
-}
-
-// luminance is WCAG's relative luminance, not OKLCh's lightness: it weights
-// channels by emitted light rather than by how bright they look.
-func (c RGB) luminance() float64 {
-	r, g, b := linear(c.R), linear(c.G), linear(c.B)
-
-	return 0.2126*r + 0.7152*g + 0.0722*b
-}
-
 // Difference returns how far apart two colors look, as their distance in
 // OKLab. Below about 0.10 a pair starts to blur into one color.
 //
-// The palette needs this as well as [Contrast]. Contrast counts only lightness,
-// so it calls two hues at one lightness identical; that is right for text on a
-// ground and wrong for two grounds side by side with nothing written on them.
+// Unlike [Contrast], which counts only lightness, it tells two hues at one
+// lightness apart: two grounds side by side, with nothing written on them.
 func Difference(a, b LCh) float64 {
 	ax, ay := a.C*math.Cos(a.H*math.Pi/180), a.C*math.Sin(a.H*math.Pi/180)
 	bx, by := b.C*math.Cos(b.H*math.Pi/180), b.C*math.Sin(b.H*math.Pi/180)
@@ -153,4 +125,30 @@ func Contrast(a, b RGB) float64 {
 	}
 
 	return (x + 0.05) / (y + 0.05)
+}
+
+// luminance is WCAG's relative luminance, not OKLCh's lightness: it weights
+// channels by emitted light rather than by how bright they look.
+func (c RGB) luminance() float64 {
+	r, g, b := linear(c.R), linear(c.G), linear(c.B)
+
+	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+// linear undoes the sRGB transfer function, giving light rather than signal.
+func linear(v float64) float64 {
+	if v <= 0.04045 {
+		return v / 12.92
+	}
+
+	return math.Pow((v+0.055)/1.055, 2.4)
+}
+
+// encode applies the sRGB transfer function, the inverse of [linear].
+func encode(v float64) float64 {
+	if v <= 0.0031308 {
+		return v * 12.92
+	}
+
+	return 1.055*math.Pow(v, 1/2.4) - 0.055
 }
