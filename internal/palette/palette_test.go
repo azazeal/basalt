@@ -8,33 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/azazeal/basalt/internal/oklch"
 )
-
-// sound is a spec that passes every check, for a case to spoil one field of.
-func sound() spec {
-	return spec{
-		Surfaces: surfacesSpec{
-			Hue:    264,
-			Chroma: 0.042,
-			Steps: []stepSpec{
-				{Name: "page", Lightness: 18},
-				{Name: "raised", Lightness: 26},
-				{Name: "body", Lightness: 76.8},
-			},
-		},
-		Renditions: renditionsSpec{
-			Text:      renditionSpec{Lightness: 74, Chroma: 0.90, Max: 0.160},
-			Deep:      renditionSpec{Lightness: 43, Chroma: 0.85, Max: 0.150},
-			Wash:      groundSpec{Lightness: 26, Over: 0.040},
-			Container: groundSpec{Lightness: 34, Over: 0.040},
-		},
-		Accents: []accentSpec{
-			{Name: "red", Hue: 18.3},
-			{Name: "blue", Hue: 245.5},
-		},
-	}
-}
 
 func TestValidate(t *testing.T) {
 	cases := []struct {
@@ -169,79 +146,39 @@ func TestValidate(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	s := sound()
-	p, err := s.resolve()
-	if err != nil {
-		t.Fatalf("resolve failed: %v", err)
+	clearing := sound()
+	clearing.Renditions.Wash.Clear, clearing.Renditions.Wash.Against = 0.12, "raised"
+	clearing.Renditions.Container.Clear, clearing.Renditions.Container.Against = 0.14, "raised"
+
+	cases := []spec{
+		0: sound(),   // the sound spec
+		1: clearing,  // both grounds asked to clear a surface
+		2: basalt(t), // the palette itself
 	}
 
-	if got, want := len(p.Surfaces), len(s.Surfaces.Steps); got != want {
-		t.Fatalf("resolved %d surfaces, want %d", got, want)
-	}
-
-	// Every surface takes the one hue the ladder was given, which is what
-	// keeps the greys from drifting apart as they lighten.
-	for _, c := range p.Surfaces {
-		if math.Abs(c.LCh.H-s.Surfaces.Hue) > 1e-9 {
-			t.Errorf("surface %q sits at hue %.4f, want %.4f", c.Name, c.LCh.H, s.Surfaces.Hue)
-		}
-	}
-
-	for _, a := range p.Accents {
-		// All three renditions of an accent are the same accent, so they share
-		// its place on the wheel and differ only in lightness and chroma.
-		for _, r := range []struct {
-			what string
-			c    oklch.LCh
-		}{
-			{"text", a.Text},
-			{"deep", a.Deep},
-			{"wash", a.Wash},
-			{"container", a.Container},
-		} {
-			if math.Abs(r.c.H-a.Hue) > 1e-9 {
-				t.Errorf("accent %q's %s sits at hue %.4f, want %.4f", a.Name, r.what, r.c.H, a.Hue)
+	for caseIndex, kase := range cases {
+		t.Run(strconv.Itoa(caseIndex), func(t *testing.T) {
+			p, err := kase.resolve()
+			if err != nil {
+				t.Fatalf("resolve failed: %v", err)
 			}
 
-			if !r.c.RGB().InGamut() {
-				t.Errorf("accent %q's %s is a color sRGB cannot show", a.Name, r.what)
+			if got, want := len(p.Surfaces), len(kase.Surfaces.Steps); got != want {
+				t.Fatalf("resolved %d surfaces, want %d", got, want)
 			}
-		}
 
-		if !(a.Deep.L < a.Text.L) {
-			t.Errorf("accent %q's deep rendition is not darker than its text one", a.Name)
-		}
+			// Every surface takes the one hue the ladder was given, which is
+			// what keeps the greys from drifting apart as they lighten.
+			for _, c := range p.Surfaces {
+				if math.Abs(c.LCh.H-kase.Surfaces.Hue) > 1e-9 {
+					t.Errorf("surface %q sits at hue %.4f, want %.4f", c.Name, c.LCh.H, kase.Surfaces.Hue)
+				}
+			}
 
-		if !(a.Container.L < a.Deep.L) {
-			t.Errorf("accent %q's container is not darker than its deep rendition", a.Name)
-		}
-
-		// The one you look through has to sit under the one you look at.
-		if !(a.Wash.L < a.Container.L) {
-			t.Errorf("accent %q's wash is not darker than its container", a.Name)
-		}
-	}
-}
-
-func TestResolveClears(t *testing.T) {
-	s := sound()
-	s.Renditions.Wash.Clear, s.Renditions.Wash.Against = 0.12, "raised"
-	s.Renditions.Container.Clear, s.Renditions.Container.Against = 0.14, "raised"
-
-	p, err := s.resolve()
-	if err != nil {
-		t.Fatalf("resolve failed: %v", err)
-	}
-	raised, _ := p.Surface("raised")
-
-	for _, a := range p.Accents {
-		if got, want := oklch.Difference(a.Wash, raised.LCh), s.Renditions.Wash.Clear; got < want {
-			t.Errorf("accent %q's wash is %.4f from raised, want at least %.4f", a.Name, got, want)
-		}
-
-		if got, want := oklch.Difference(a.Container, raised.LCh), s.Renditions.Container.Clear; got < want {
-			t.Errorf("accent %q's container is %.4f from raised, want at least %.4f", a.Name, got, want)
-		}
+			for _, a := range p.Accents {
+				checkAccent(t, p, kase.Renditions, a)
+			}
+		})
 	}
 }
 
@@ -374,4 +311,104 @@ func write(t *testing.T, src string) string {
 	}
 
 	return path
+}
+
+// checkAccent holds one resolved accent to what the renditions promise.
+func checkAccent(t *testing.T, p *Palette, rs renditionsSpec, a Accent) {
+	t.Helper()
+
+	// All four renditions of an accent are the same accent, so they share its
+	// place on the wheel and differ only in lightness and chroma.
+	for _, r := range []struct {
+		what string
+		c    oklch.LCh
+	}{
+		{"text", a.Text},
+		{"deep", a.Deep},
+		{"wash", a.Wash},
+		{"container", a.Container},
+	} {
+		if math.Abs(r.c.H-a.Hue) > 1e-9 {
+			t.Errorf("accent %q's %s sits at hue %.4f, want %.4f", a.Name, r.what, r.c.H, a.Hue)
+		}
+
+		if !r.c.RGB().InGamut() {
+			t.Errorf("accent %q's %s is a color sRGB cannot show", a.Name, r.what)
+		}
+	}
+
+	if !(a.Deep.L < a.Text.L) {
+		t.Errorf("accent %q's deep rendition is not darker than its text one", a.Name)
+	}
+
+	if !(a.Container.L < a.Deep.L) {
+		t.Errorf("accent %q's container is not darker than its deep rendition", a.Name)
+	}
+
+	// The one you look through has to sit under the one you look at, even
+	// after either has risen to clear a surface.
+	if !(a.Wash.L < a.Container.L) {
+		t.Errorf("accent %q's wash is not darker than its container", a.Name)
+	}
+
+	for _, g := range []struct {
+		what string
+		spec groundSpec
+		c    oklch.LCh
+	}{
+		{"wash", rs.Wash, a.Wash},
+		{"container", rs.Container, a.Container},
+	} {
+		if g.spec.Clear == 0 {
+			continue
+		}
+
+		against, _ := p.Surface(g.spec.Against)
+		if got := oklch.Difference(g.c, against.LCh); got < g.spec.Clear {
+			t.Errorf("accent %q's %s is %.4f from %s, want at least %.4f",
+				a.Name, g.what, got, g.spec.Against, g.spec.Clear)
+		}
+	}
+}
+
+// sound is a spec that passes every check, for a case to spoil one field of.
+func sound() spec {
+	return spec{
+		Surfaces: surfacesSpec{
+			Hue:    264,
+			Chroma: 0.042,
+			Steps: []stepSpec{
+				{Name: "page", Lightness: 18},
+				{Name: "raised", Lightness: 26},
+				{Name: "body", Lightness: 76.8},
+			},
+		},
+		Renditions: renditionsSpec{
+			Text:      renditionSpec{Lightness: 74, Chroma: 0.90, Max: 0.160},
+			Deep:      renditionSpec{Lightness: 43, Chroma: 0.85, Max: 0.150},
+			Wash:      groundSpec{Lightness: 26, Over: 0.040},
+			Container: groundSpec{Lightness: 34, Over: 0.040},
+		},
+		Accents: []accentSpec{
+			{Name: "red", Hue: 18.3},
+			{Name: "blue", Hue: 245.5},
+		},
+	}
+}
+
+// basalt is the spec the repository ships, read without Load so the test can
+// see what each ground was asked to clear.
+func basalt(t *testing.T) spec {
+	t.Helper()
+
+	var s spec
+	if _, err := toml.DecodeFile(filepath.Join("..", "..", "palette", "basalt.toml"), &s); err != nil {
+		t.Fatalf("reading the palette failed: %v", err)
+	}
+
+	if err := s.validate(); err != nil {
+		t.Fatalf("the palette does not validate: %v", err)
+	}
+
+	return s
 }
