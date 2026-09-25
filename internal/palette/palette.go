@@ -24,8 +24,9 @@ func Load(path string) (*Palette, error) {
 		return nil, fmt.Errorf("failed reading %s: %w", path, err)
 	}
 
-	// A misspelt key is not an error to the decoder: the field it meant keeps
-	// its zero, which reads as "not set" and resolves to a plausible color.
+	// A misspelled key is not an error to the decoder: the field it meant
+	// keeps its zero, which reads as "not set" and resolves to a plausible
+	// color.
 	if keys := md.Undecoded(); len(keys) > 0 {
 		return nil, fmt.Errorf("%s: unknown key %q", path, keys[0].String())
 	}
@@ -99,6 +100,12 @@ type Accent struct {
 	Deep      oklch.LCh
 	Wash      oklch.LCh
 	Container oklch.LCh
+}
+
+type spec struct {
+	Surfaces   surfacesSpec   `toml:"surfaces"`
+	Renditions renditionsSpec `toml:"renditions"`
+	Accents    []accentSpec   `toml:"accent"`
 }
 
 func (s *spec) resolve() (*Palette, error) {
@@ -200,23 +207,6 @@ func (s *spec) ground(g groundSpec, hue float64, p *Palette) (oklch.LCh, error) 
 	return c, nil
 }
 
-func (r renditionSpec) at(hue float64) oklch.LCh {
-	l := r.Lightness / 100
-
-	c := r.Chroma * oklch.MaxChroma(l, hue)
-	if r.Max > 0 {
-		c = math.Min(c, r.Max)
-	}
-
-	return oklch.LCh{L: l, C: c, H: hue}
-}
-
-type spec struct {
-	Surfaces   surfacesSpec   `toml:"surfaces"`
-	Renditions renditionsSpec `toml:"renditions"`
-	Accents    []accentSpec   `toml:"accent"`
-}
-
 // surfacesSpec is the accent-free ladder. Chroma is the height of one curve
 // rather than a value per step, so a step says only how light it is.
 type surfacesSpec struct {
@@ -253,6 +243,17 @@ type renditionSpec struct {
 	Lightness float64 `toml:"lightness"`
 	Chroma    float64 `toml:"chroma"`
 	Max       float64 `toml:"max"`
+}
+
+func (r renditionSpec) at(hue float64) oklch.LCh {
+	l := r.Lightness / 100
+
+	c := r.Chroma * oklch.MaxChroma(l, hue)
+	if r.Max > 0 {
+		c = math.Min(c, r.Max)
+	}
+
+	return oklch.LCh{L: l, C: c, H: hue}
 }
 
 // groundSpec places a tinted ground. Unlike a fill it is measured against the

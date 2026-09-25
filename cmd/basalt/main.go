@@ -92,7 +92,8 @@ func report(w io.Writer, p *palette.Palette) error {
 			c.Name, c.Hex(), c.LCh.L*100, c.LCh.C, oklch.Contrast(c.RGB(), page.RGB()), c.Note)
 	}
 
-	fmt.Fprintln(tw, "\nACCENTS\tHUE\tTEXT\ton PAGE\tsunk on IT\tDEEP\tbright on IT\tWASH\tcomment on IT\tCONTAINER\tbody on IT\t")
+	fmt.Fprintln(tw, "\nACCENTS\tHUE\tTEXT\ton PAGE\tsunk on IT\tDEEP\tbright on IT\t"+
+		"WASH\tcomment on IT\tCONTAINER\tbody on IT\t")
 	for _, a := range p.Accents {
 		fmt.Fprintf(tw, "%s\t%.1f\t%s\t%.2f\t%.2f\t%s\t%.2f\t%s\t%.2f\t%s\t%.2f\t\n",
 			a.Name,

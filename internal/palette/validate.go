@@ -43,7 +43,10 @@ func (s *spec) validate() error {
 
 		if a.Lightness == 0 {
 			if a.Why != "" {
-				return fmt.Errorf("accent %q says why it overrides the common lightness, but does not override it", a.Name)
+				return fmt.Errorf(
+					"accent %q says why it overrides the common lightness, but does not override it",
+					a.Name,
+				)
 			}
 
 			continue

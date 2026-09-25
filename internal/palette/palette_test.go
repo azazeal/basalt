@@ -251,11 +251,11 @@ func TestLoadRejects(t *testing.T) {
 			old: "lightness = 76.8",
 			new: "lightness = 10.0",
 		},
-		1: { // a misspelt key, which would decode to nothing
+		1: { // a misspelled key, which would decode to nothing
 			old: "hue = 245.5",
 			new: "hue = 245.5\nlightnes = 68.0",
 		},
-		2: { // a misspelt key inside an inline table
+		2: { // a misspelled key inside an inline table
 			old: "wash = { lightness = 26.0,",
 			new: "wash = { lightnes = 26.0,",
 		},
