@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/azazeal/basalt/internal/oklch"
 )
 
 // sound is a spec that passes every check, for a case to spoil one field of.
@@ -117,6 +119,34 @@ func TestValidate(t *testing.T) {
 			spoil:   func(s *spec) { s.Renditions.Wash.Lightness = 40 },
 			wantErr: true,
 		},
+		20: { // a ground asked to clear a surface the ladder does not have
+			spoil: func(s *spec) {
+				s.Renditions.Wash.Clear = 0.085
+				s.Renditions.Wash.Against = "row"
+			},
+			wantErr: true,
+		},
+		21: { // clear with nothing to clear
+			spoil:   func(s *spec) { s.Renditions.Wash.Clear = 0.085 },
+			wantErr: true,
+		},
+		22: { // something to clear with no distance to clear it by
+			spoil:   func(s *spec) { s.Renditions.Container.Against = "raised" },
+			wantErr: true,
+		},
+		23: { // a distance of less than none
+			spoil: func(s *spec) {
+				s.Renditions.Wash.Clear = -0.1
+				s.Renditions.Wash.Against = "raised"
+			},
+			wantErr: true,
+		},
+		24: { // the container may clear a surface as well as the wash
+			spoil: func(s *spec) {
+				s.Renditions.Container.Clear = 0.1
+				s.Renditions.Container.Against = "raised"
+			},
+		},
 	}
 
 	for caseIndex, kase := range cases {
@@ -182,6 +212,25 @@ func TestResolve(t *testing.T) {
 		// The one you look through has to sit under the one you look at.
 		if !(a.Wash.LCh.L < a.Container.LCh.L) {
 			t.Errorf("accent %q's wash is not darker than its container", a.Name)
+		}
+	}
+}
+
+func TestResolveClears(t *testing.T) {
+	s := sound()
+	s.Renditions.Wash.Clear, s.Renditions.Wash.Against = 0.12, "raised"
+	s.Renditions.Container.Clear, s.Renditions.Container.Against = 0.14, "raised"
+
+	p := s.resolve()
+	raised, _ := p.Surface("raised")
+
+	for _, a := range p.Accents {
+		if got, want := oklch.Difference(a.Wash.LCh, raised.LCh), s.Renditions.Wash.Clear; got < want {
+			t.Errorf("accent %q's wash is %.4f from raised, want at least %.4f", a.Name, got, want)
+		}
+
+		if got, want := oklch.Difference(a.Container.LCh, raised.LCh), s.Renditions.Container.Clear; got < want {
+			t.Errorf("accent %q's container is %.4f from raised, want at least %.4f", a.Name, got, want)
 		}
 	}
 }

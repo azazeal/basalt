@@ -135,17 +135,6 @@ type groundSpec struct {
 	Against string  `toml:"against"`
 }
 
-// ground places a ground on the wheel, over the ladder's own chroma there. Fit
-// pulls it back where sRGB cannot hold that much, as it does for cyan and blue:
-// a dark teal barely exists.
-func (s *spec) ground(g groundSpec, hue float64) oklch.LCh {
-	return oklch.LCh{
-		L: g.Lightness / 100,
-		C: s.Surfaces.chromaAt(g.Lightness) + g.Over,
-		H: hue,
-	}.Fit()
-}
-
 const (
 	// riseStep is finer than an 8-bit channel can express, so the answer is
 	// the lowest a ground could sit and still clear.
@@ -156,19 +145,32 @@ const (
 	ceiling = 60.0
 )
 
-// clearedGround places a ground and, where it has been asked to clear a surface
-// and does not, raises it until it does. Hue is free and lightness is not, so
-// it spends the least lightness that works and most accents never move.
-func (s *spec) clearedGround(g groundSpec, hue float64, against oklch.LCh, ok bool) oklch.LCh {
-	c := s.ground(g, hue)
+// ground places a ground on the wheel, over the ladder's own chroma there, and
+// fits it to sRGB. Where it has been asked to clear a surface and does not, it
+// rises until it does. Hue is free and lightness is not, so it spends the least
+// lightness that works and most accents never move.
+func (s *spec) ground(g groundSpec, hue float64, p *Palette) oklch.LCh {
+	at := func(lightness float64) oklch.LCh {
+		return oklch.LCh{
+			L: lightness / 100,
+			C: s.Surfaces.chromaAt(lightness) + g.Over,
+			H: hue,
+		}.Fit()
+	}
 
-	if g.Clear <= 0 || !ok {
+	c := at(g.Lightness)
+	if g.Clear == 0 {
 		return c
 	}
 
-	for g.Lightness < ceiling && oklch.Difference(c, against) < g.Clear {
-		g.Lightness += riseStep
-		c = s.ground(g, hue)
+	against, ok := p.Surface(g.Against)
+	if !ok {
+		panic("palette: validate let a ground clear a surface that does not exist")
+	}
+
+	for l := g.Lightness; l < ceiling && oklch.Difference(c, against.LCh) < g.Clear; {
+		l += riseStep
+		c = at(l)
 	}
 
 	return c
@@ -235,20 +237,6 @@ func (s *spec) resolve() *Palette {
 		}
 	}
 
-	// The surface a wash must stay distinguishable from, resolved once. Named
-	// in the palette rather than assumed here: which ground a wash lands on is
-	// a fact about the editor, not about color.
-	var (
-		against    oklch.LCh
-		hasAgainst bool
-	)
-
-	if name := s.Renditions.Wash.Against; name != "" {
-		if c, found := p.Surface(name); found {
-			against, hasAgainst = c.LCh, true
-		}
-	}
-
 	for i, a := range s.Accents {
 		text := s.Renditions.Text
 
@@ -267,8 +255,8 @@ func (s *spec) resolve() *Palette {
 
 			Text:      Color{Name: a.Name, Note: a.Note, LCh: text.at(a.Hue)},
 			Deep:      Color{Name: a.Name, Note: a.Note, LCh: s.Renditions.Deep.at(a.Hue)},
-			Wash:      Color{Name: a.Name, Note: a.Note, LCh: s.clearedGround(s.Renditions.Wash, a.Hue, against, hasAgainst)},
-			Container: Color{Name: a.Name, Note: a.Note, LCh: s.ground(s.Renditions.Container, a.Hue)},
+			Wash:      Color{Name: a.Name, Note: a.Note, LCh: s.ground(s.Renditions.Wash, a.Hue, p)},
+			Container: Color{Name: a.Name, Note: a.Note, LCh: s.ground(s.Renditions.Container, a.Hue, p)},
 		}
 	}
 
