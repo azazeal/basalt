@@ -61,11 +61,12 @@ name = "lifted"
 lightness = 30.0
 note = "over the raised: a control sitting on a chip, a selected row"
 
-# The six marks are placed by contrast against the page, each half again the one
-# below it, anchored on ordinary text at 9.
+# The six marks are placed by contrast against the page, each about the square
+# root of two times the one below it, so every second step doubles. They are
+# anchored on ordinary text at 9.
 #
 # None of them is "the border color" and asking for one is the wrong question. A
-# rule is only as visible as the surface under it: the same step measures 2.25
+# rule is only as visible as the surface under it: the same step measures 2.27
 # on the page and 1.87 on a raised surface. Which step a rule takes is the role
 # layer's, against the ground it is actually drawn on.
 
@@ -116,8 +117,8 @@ note = "text being emphasised, and text on a deep fill"
 text = { lightness = 74.0, chroma = 0.90, max = 0.160 }
 
 # Dark enough for bright text on it: a critical alert, a control that can cost
-# something. Capped for the same reason text is, and more so, since violet holds
-# three times the color cyan can at this lightness.
+# something. Capped for the same reason text is, and more so, since magenta
+# holds nearly three times the color cyan can at this lightness.
 deep = { lightness = 43.0, chroma = 0.85, max = 0.150 }
 
 # The ground under text that already has a color: a selection, the other copies
@@ -131,7 +132,7 @@ deep = { lightness = 43.0, chroma = 0.85, max = 0.150 }
 #
 # Magenta and orange not moving is what earns the rule. Visual is magenta and
 # Select is orange, so a per-mode selection changes the hue and nothing else: no
-# foreground shifts by more than 0.39 of a contrast ratio.
+# foreground shifts by more than 0.21 of a contrast ratio.
 #
 # NOTE: if a wash is ever too faint the answer is a stronger wash and never the
 # container. Giving the copies the selection's own hue was tried and said
@@ -150,12 +151,13 @@ wash = { lightness = 26.0, over = 0.070, clear = 0.085, against = "row" }
 # reach them. That is what keeps severity ordered: an error ground and a warning
 # ground weigh the same and differ only by hue.
 #
-# Cyan and blue fall short here and cannot be fixed from this file, since sRGB
-# has almost no dark teal. Where one has to read as a ground, the role layer
-# should give it a second signal.
+# Cyan and blue sit closest to the surfaces and cannot be pulled apart from them
+# in this file: sRGB has almost no dark teal, and blue's hue is 14 degrees from
+# the surfaces'. Where one has to read as a ground, the role layer should give
+# it a second signal.
 container = { lightness = 34.0, over = 0.040 }
 
-# Seven accents, one per thing the theme needs to say, none closer than 34
+# Seven accents, one per thing the theme needs to say, none closer than 35
 # degrees. The notes say what an accent means, not where it is used.
 #
 # A terminal has fewer slots than the wheel has colors, and the shortfall runs
