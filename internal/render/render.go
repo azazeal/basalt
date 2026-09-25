@@ -254,20 +254,20 @@ func (s *sheet) surfaces() {
 	s.y += sectionGap - rowGap
 }
 
-// accents draws one row per accent: what it means on the left, and its three
+// accents draws one row per accent: what it means on the left, and its four
 // renditions on the right, each carrying the text that is read on it.
 func (s *sheet) accents() {
 	s.heading("accents", "text · deep fill · wash · container")
 
 	w := (content - labelColumn - rowGap*3) / 4
-	sunk, bright, body := s.hex("sunk"), s.hex("bright"), s.hex("body")
+	sunk, bright, muted, body := s.hex("sunk"), s.hex("bright"), s.hex("muted"), s.hex("body")
 
 	for _, a := range s.p.Accents {
 		top := s.y
 		mid := top + accentRow/2 - 4
 
-		s.text(margin, mid, s.hex("body"), a.Name, size(14), weight("600"))
-		s.text(margin, mid+16, s.hex("muted"), wrapNote(a.Note), size(11))
+		s.text(margin, mid, body, a.Name, size(14), weight("600"))
+		s.text(margin, mid+16, muted, wrapNote(a.Note), size(11))
 
 		// An accent off the common lightness says so here too: the sheet is
 		// what gets looked at.
@@ -275,33 +275,34 @@ func (s *sheet) accents() {
 			s.text(margin, mid+30, s.hex("faint"), "· off the common lightness", size(10), italic())
 		}
 
-		// Drawn on the page as a token is, with the same value as a fill.
+		for i, c := range []struct {
+			ground, ink, hex string
+		}{
+			// on the page, as a token is read
+			{s.hex("page"), a.Text.Hex(), a.Text.Hex()},
+
+			// a fill in the serious register, with bright text on it
+			{a.Deep.Hex(), bright, a.Deep.Hex()},
+
+			// with a comment on it, the dimmest thing a wash has to leave
+			// readable
+			{a.Wash.Hex(), muted, a.Wash.Hex()},
+
+			// the hue carries what the ground says, not the text, so the text
+			// is body and not the accent's own value
+			{a.Container.Hex(), body, a.Container.Hex()},
+		} {
+			x := margin + labelColumn + i*(w+rowGap)
+
+			s.swatch(x, top, w, accentRow-rowGap, 5, c.ground)
+			s.text(x+14, mid+4, c.ink, "Aa", size(15), family(mono), weight("500"))
+			s.text(x+44, mid+4, c.ink, c.hex, size(11), family(mono))
+		}
+
+		// The text value again, as a fill with the deepest surface on it.
 		x := margin + labelColumn
-		s.swatch(x, top, w, accentRow-rowGap, 5, s.hex("page"))
-		s.text(x+14, mid+4, a.Text.Hex(), "Aa", size(15), family(mono), weight("500"))
-		s.text(x+44, mid+4, a.Text.Hex(), a.Text.Hex(), size(11), family(mono))
 		s.rect(x+w-50, top+8, 40, accentRow-rowGap-16, 4, a.Text.Hex())
 		s.text(x+w-30, mid+4, sunk, "fill", size(10), family(mono), anchor("middle"), weight("600"))
-
-		// Deep, a fill in the serious register with bright text on it.
-		x += w + rowGap
-		s.swatch(x, top, w, accentRow-rowGap, 5, a.Deep.Hex())
-		s.text(x+14, mid+4, bright, "Aa", size(15), family(mono), weight("500"))
-		s.text(x+44, mid+4, bright, a.Deep.Hex(), size(11), family(mono))
-
-		// Shown with a comment on it: the dimmest thing a wash has to leave
-		// readable.
-		x += w + rowGap
-		s.swatch(x, top, w, accentRow-rowGap, 5, a.Wash.Hex())
-		s.text(x+14, mid+4, s.hex("muted"), "Aa", size(15), family(mono), weight("500"))
-		s.text(x+44, mid+4, s.hex("muted"), a.Wash.Hex(), size(11), family(mono))
-
-		// The hue carries what the ground says, not the text, which is why this
-		// is body and not the accent's own value.
-		x += w + rowGap
-		s.swatch(x, top, w, accentRow-rowGap, 5, a.Container.Hex())
-		s.text(x+14, mid+4, body, "Aa", size(15), family(mono), weight("500"))
-		s.text(x+44, mid+4, body, a.Container.Hex(), size(11), family(mono))
 
 		s.y += accentRow
 	}
