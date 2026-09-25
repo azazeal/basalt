@@ -1,9 +1,7 @@
 // Package render draws a palette so it can be looked at.
 //
-// The sheet is not a picture of the theme, it is the theme: every color on it
-// comes from the resolved palette, so a sheet that looks wrong is a palette
-// that is wrong. A screenshot could only show one installed port, and only the
-// half of the theme that lives in a text field.
+// Every color on the sheet comes from the resolved palette, so a sheet that
+// looks wrong is a palette that is wrong.
 package render
 
 import (
@@ -242,16 +240,12 @@ func (s *sheet) titleBar(top int) {
 }
 
 // tree draws the files on the surface behind the page. No separator is drawn
-// between it and the file: the step in the ladder is the separator, which is
-// the claim the whole theme rests on.
+// between it and the file: the step in the ladder is the separator.
 func (s *sheet) tree(top, h int) {
 	s.rect(margin, top, sidebar, h, 0, s.hex("sunk"))
 
 	s.text(margin+30, top+22, s.accentHex("magenta"), "basalt", size(12), weight("600"))
 
-	// Depth is a number rather than spaces in the name: SVG collapses runs of
-	// whitespace unless asked not to, so an indent written into the string
-	// comes out flat.
 	for i, f := range []struct {
 		name    string
 		depth   int
@@ -276,8 +270,7 @@ func (s *sheet) tree(top, h int) {
 		x := margin + 16 + f.depth*indent
 		y := top + 46 + i*20
 
-		// One per level the row sits inside, in the step named for exactly
-		// this.
+		// a guide per level the row sits inside
 		for lv := 1; lv <= f.depth; lv++ {
 			gx := margin + 16 + lv*indent - 8
 			fmt.Fprintf(&s.buf, `<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="%s" stroke-width="1"/>`,
@@ -509,8 +502,8 @@ func (s *sheet) bar() {
 		x += w + 8
 	}
 
-	// A notice in the container register and a control that can end the session
-	// in the deep one: one accent, two depths, two weights of meaning.
+	// A notice in the container register, and a control that can end the
+	// session in the deep one.
 	right := margin + content - 14
 
 	if a, ok := s.p.Accent("orange"); ok {
@@ -532,10 +525,12 @@ func (s *sheet) bar() {
 	s.y = top + h + sectionGap
 }
 
-// footer says where the colors came from, since a sheet of hexes with no
-// account of how they got there is what this repository exists to stop being.
+// footer says where the colors came from. The counts are read off the palette,
+// so the sheet cannot claim a wheel it no longer has.
+//
+// TODO: the band in the last line is copied from the palette's validation by
+// hand, and goes stale if that changes.
 func (s *sheet) footer() {
-	// Read off the palette, so the sheet cannot claim a wheel it no longer has.
 	for _, line := range []string{
 		fmt.Sprintf(
 			"Every color here is computed, not chosen. The surfaces are one hue at %d lightnesses; the accents are %d",
@@ -659,8 +654,7 @@ func (s *sheet) spanFill(sp span) string {
 }
 
 // chevron draws the triangle before a folder, right when shut and down when
-// open. It takes the mark step rather than the folder's color: which way it
-// points is all it says, and it should not compete with the name.
+// open, in a mark step so it does not compete with the name.
 func (s *sheet) chevron(x, y int, open bool) {
 	var d string
 	if open {
@@ -693,8 +687,7 @@ func (s *sheet) fileIcon(x, y int, stroke string) {
 		x-4, y-5, stroke)
 }
 
-// undercurl draws the wave under a token. A shape rather than a color change,
-// because what the token is stays true while the server complains about it.
+// undercurl draws the wave under a token.
 func (s *sheet) undercurl(x, y, w int, stroke string) {
 	const step = 4
 
