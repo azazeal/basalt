@@ -460,7 +460,7 @@ func (s *sheet) tree(top, h int) {
 		{name: "oklch", depth: 2, dir: true, accent: "blue"},
 		{name: "palette", depth: 2, dir: true, accent: "blue"},
 		{name: "render", depth: 2, dir: true, open: true, accent: "blue"},
-		{name: "svg.go", depth: 3, accent: "green"},
+		{name: "render.go", depth: 3, accent: "green"},
 		{name: "palette", depth: 1, dir: true, open: true, accent: "blue"},
 		{name: "basalt.toml", depth: 2, accent: "yellow"},
 		{name: "ports", depth: 1, dir: true, surface: "faint"},
