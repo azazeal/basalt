@@ -207,22 +207,22 @@ func Load(path string) (*Palette, error) {
 
 	md, err := toml.DecodeFile(path, &s)
 	if err != nil {
-		return nil, fmt.Errorf("palette: reading %s: %w", path, err)
+		return nil, fmt.Errorf("failed reading %s: %w", path, err)
 	}
 
 	// A misspelt key is not an error to the decoder: the field it meant keeps
 	// its zero, which reads as "not set" and resolves to a plausible color.
 	if keys := md.Undecoded(); len(keys) > 0 {
-		return nil, fmt.Errorf("palette: %s: unknown key %q", path, keys[0].String())
+		return nil, fmt.Errorf("%s: unknown key %q", path, keys[0].String())
 	}
 
 	if err := s.validate(); err != nil {
-		return nil, fmt.Errorf("palette: %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
 	p, err := s.resolve()
 	if err != nil {
-		return nil, fmt.Errorf("palette: %s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
 	return p, nil
