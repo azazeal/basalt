@@ -62,8 +62,6 @@ func (s *spec) validate() error {
 			)
 		}
 
-		// An override with no reason is a preference in a rule's clothes, and
-		// the next reader cannot tell the difference.
 		if a.Why == "" {
 			return fmt.Errorf("accent %q overrides the common lightness without saying why", a.Name)
 		}
@@ -102,8 +100,6 @@ func (s *surfacesSpec) validate() error {
 			return fmt.Errorf("surface step %q has lightness %g, which is off the scale", step.Name, step.Lightness)
 		}
 
-		// A ladder that doubles back is always a mistake, and two steps at one
-		// lightness are one step wearing two names.
 		if step.Lightness <= prev {
 			return fmt.Errorf("surface step %q is not lighter than the step before it", step.Name)
 		}
@@ -146,12 +142,28 @@ func (s *renditionsSpec) validate(surfaces []stepSpec) error {
 		}
 	}
 
-	// The one looked through has to be the darker of the two.
 	if s.Wash.Lightness >= s.Container.Lightness {
 		return fmt.Errorf(
-			"the wash sits at lightness %g and the container at %g, so the one meant to be seen through is not the lighter",
+			"the wash sits at lightness %g and the container at %g,"+
+				" so the one meant to be seen through is not the darker",
 			s.Wash.Lightness, s.Container.Lightness,
 		)
+	}
+
+	return nil
+}
+
+func (r renditionSpec) validate() error {
+	if r.Lightness < 0 || r.Lightness > 100 {
+		return fmt.Errorf("lightness %g is off the scale", r.Lightness)
+	}
+
+	if r.Chroma <= 0 || r.Chroma > 1 {
+		return fmt.Errorf("chroma %g is not a fraction of what sRGB can show", r.Chroma)
+	}
+
+	if r.Max < 0 {
+		return fmt.Errorf("the chroma cap %g is less than none", r.Max)
 	}
 
 	return nil
@@ -177,22 +189,6 @@ func (g groundSpec) validate(surfaces []stepSpec) error {
 
 	if g.Against != "" && !slices.ContainsFunc(surfaces, func(s stepSpec) bool { return s.Name == g.Against }) {
 		return fmt.Errorf("against names %q, which is not a surface", g.Against)
-	}
-
-	return nil
-}
-
-func (r renditionSpec) validate() error {
-	if r.Lightness < 0 || r.Lightness > 100 {
-		return fmt.Errorf("lightness %g is off the scale", r.Lightness)
-	}
-
-	if r.Chroma <= 0 || r.Chroma > 1 {
-		return fmt.Errorf("chroma %g is not a fraction of what sRGB can show", r.Chroma)
-	}
-
-	if r.Max < 0 {
-		return fmt.Errorf("the chroma cap %g is less than none", r.Max)
 	}
 
 	return nil

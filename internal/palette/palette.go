@@ -15,192 +15,6 @@ import (
 	"github.com/azazeal/basalt/internal/oklch"
 )
 
-// Palette is a resolved palette: the surface ladder in order from the deepest
-// to the lightest, and the accent wheel in the order it was written down.
-type Palette struct {
-	Surfaces []Color
-	Accents  []Accent
-}
-
-// Color is one entry, with the note saying what it is for.
-type Color struct {
-	Name string
-	Note string
-	LCh  oklch.LCh
-}
-
-// Hex renders the color as "#RRGGBB".
-func (c Color) Hex() string {
-	return c.LCh.Hex()
-}
-
-// RGB returns the color in sRGB.
-func (c Color) RGB() oklch.RGB {
-	return c.LCh.RGB()
-}
-
-// Accent is one place on the wheel and the four renditions it resolves to. A
-// fifth use, a bright fill with the deepest surface as its text, is
-// [Accent.Text] again rather than a color of its own.
-type Accent struct {
-	Name string
-	Note string
-
-	// Why is the reason the accent overrides the common text lightness, and
-	// is empty for every accent that does not.
-	Why string
-
-	Hue float64
-
-	Text      oklch.LCh
-	Deep      oklch.LCh
-	Wash      oklch.LCh
-	Container oklch.LCh
-}
-
-// Surface returns the named surface step.
-func (p *Palette) Surface(name string) (Color, bool) {
-	for _, c := range p.Surfaces {
-		if c.Name == name {
-			return c, true
-		}
-	}
-
-	return Color{}, false
-}
-
-// Accent returns the named accent.
-func (p *Palette) Accent(name string) (Accent, bool) {
-	for _, a := range p.Accents {
-		if a.Name == name {
-			return a, true
-		}
-	}
-
-	return Accent{}, false
-}
-
-type spec struct {
-	Surfaces   surfacesSpec   `toml:"surfaces"`
-	Renditions renditionsSpec `toml:"renditions"`
-	Accents    []accentSpec   `toml:"accent"`
-}
-
-// surfacesSpec is the accent-free ladder. Chroma is the height of one curve
-// rather than a value per step, so a step says only how light it is.
-type surfacesSpec struct {
-	Hue    float64    `toml:"hue"`
-	Chroma float64    `toml:"chroma"`
-	Steps  []stepSpec `toml:"step"`
-}
-
-// chromaAt returns how much color the ladder carries at a lightness: the peak,
-// shaped by a squared sine. The ends go to nothing because a near-black cannot
-// show a tint and a near-white wearing one looks dirty.
-func (s *surfacesSpec) chromaAt(lightness float64) float64 {
-	sine := math.Sin(math.Pi * lightness / 100)
-
-	return s.Chroma * sine * sine
-}
-
-type stepSpec struct {
-	Name      string  `toml:"name"`
-	Lightness float64 `toml:"lightness"`
-	Note      string  `toml:"note"`
-}
-
-type renditionsSpec struct {
-	Text      renditionSpec `toml:"text"`
-	Deep      renditionSpec `toml:"deep"`
-	Wash      groundSpec    `toml:"wash"`
-	Container groundSpec    `toml:"container"`
-}
-
-// groundSpec places a tinted ground. Unlike a fill it is measured against the
-// surface beside it rather than against sRGB, so Over is how much more color it
-// carries than the plain ladder at that lightness.
-//
-// There are two, and the difference is whether you look at the ground or
-// through it. A container is the strip and has text on it; a wash lies under
-// text that already has a color. Those pull opposite ways, so one value cannot
-// be both.
-type groundSpec struct {
-	Lightness float64 `toml:"lightness"`
-	Over      float64 `toml:"over"`
-
-	// Clear is how far the ground must end up from the surface named in
-	// Against, as [oklch.Difference]. Chroma buys it first; Lightness rises
-	// only where sRGB has none left. Zero asks for nothing.
-	Clear   float64 `toml:"clear"`
-	Against string  `toml:"against"`
-}
-
-const (
-	// riseStep is finer than an 8-bit channel can express, so the answer is
-	// the lowest a ground could sit and still clear.
-	riseStep = 0.01
-
-	// ceiling is as far as a ground rises before the palette is rejected for
-	// asking a separation no lightness could buy.
-	ceiling = 60.0
-)
-
-// ground places a ground on the wheel, over the ladder's own chroma there, and
-// fits it to sRGB. Where it has been asked to clear a surface and does not, it
-// rises until it does. Hue is free and lightness is not, so it spends the least
-// lightness that works and most accents never move.
-func (s *spec) ground(g groundSpec, hue float64, p *Palette) (oklch.LCh, error) {
-	at := func(lightness float64) oklch.LCh {
-		return oklch.LCh{
-			L: lightness / 100,
-			C: s.Surfaces.chromaAt(lightness) + g.Over,
-			H: hue,
-		}.Fit()
-	}
-
-	c := at(g.Lightness)
-	if g.Clear == 0 {
-		return c, nil
-	}
-
-	against, ok := p.Surface(g.Against)
-	if !ok {
-		panic("palette: validate let a ground clear a surface that does not exist")
-	}
-
-	for l := g.Lightness; oklch.Difference(c, against.LCh) < g.Clear; {
-		if l >= ceiling {
-			return oklch.LCh{}, fmt.Errorf("no lightness under %g clears %q by %g", ceiling, g.Against, g.Clear)
-		}
-
-		l += riseStep
-		c = at(l)
-	}
-
-	return c, nil
-}
-
-// renditionSpec places one rendition. Chroma is a fraction of what sRGB can
-// show there, and Max caps it absolutely so the accents with room to spare do
-// not shout over the ones without. Zero means no cap.
-type renditionSpec struct {
-	Lightness float64 `toml:"lightness"`
-	Chroma    float64 `toml:"chroma"`
-	Max       float64 `toml:"max"`
-}
-
-// accentSpec places one accent on the wheel. Lightness overrides the text
-// rendition's, only where sRGB is not symmetric enough for the common one; Why
-// must say what the asymmetry is, so an override cannot pass as a preference.
-// Zero means no override.
-type accentSpec struct {
-	Name      string  `toml:"name"`
-	Hue       float64 `toml:"hue"`
-	Lightness float64 `toml:"lightness"`
-	Note      string  `toml:"note"`
-	Why       string  `toml:"why"`
-}
-
 // Load reads a palette from a TOML file and resolves it.
 func Load(path string) (*Palette, error) {
 	var s spec
@@ -226,6 +40,65 @@ func Load(path string) (*Palette, error) {
 	}
 
 	return p, nil
+}
+
+// Palette is a resolved palette: the surface ladder in order from the deepest
+// to the lightest, and the accent wheel in the order it was written down.
+type Palette struct {
+	Surfaces []Color
+	Accents  []Accent
+}
+
+func (p *Palette) Surface(name string) (Color, bool) {
+	for _, c := range p.Surfaces {
+		if c.Name == name {
+			return c, true
+		}
+	}
+
+	return Color{}, false
+}
+
+func (p *Palette) Accent(name string) (Accent, bool) {
+	for _, a := range p.Accents {
+		if a.Name == name {
+			return a, true
+		}
+	}
+
+	return Accent{}, false
+}
+
+// Color is one step of the ladder, with the note saying what it is for.
+type Color struct {
+	Name string
+	Note string
+	LCh  oklch.LCh
+}
+
+func (c Color) Hex() string {
+	return c.LCh.Hex()
+}
+
+func (c Color) RGB() oklch.RGB {
+	return c.LCh.RGB()
+}
+
+// Accent is one place on the wheel and the four renditions it resolves to.
+type Accent struct {
+	Name string
+	Note string
+
+	// Why is the reason the accent overrides the common text lightness, and is
+	// empty for every accent that does not.
+	Why string
+
+	Hue float64
+
+	Text      oklch.LCh
+	Deep      oklch.LCh
+	Wash      oklch.LCh
+	Container oklch.LCh
 }
 
 func (s *spec) resolve() (*Palette, error) {
@@ -282,7 +155,51 @@ func (s *spec) resolve() (*Palette, error) {
 	return p, nil
 }
 
-// at places the rendition on the wheel at the given hue.
+const (
+	// riseStep is finer than an 8-bit channel can express, so the answer is
+	// the lowest a ground could sit and still clear.
+	riseStep = 0.01
+
+	// ceiling is as far as a ground rises before the palette is rejected for
+	// asking a separation no lightness could buy.
+	ceiling = 60.0
+)
+
+// ground places a ground on the wheel, over the ladder's own chroma there, and
+// fits it to sRGB. Where it has been asked to clear a surface and does not, it
+// rises until it does: hue is free and lightness is not, so it spends the least
+// lightness that works.
+func (s *spec) ground(g groundSpec, hue float64, p *Palette) (oklch.LCh, error) {
+	at := func(lightness float64) oklch.LCh {
+		return oklch.LCh{
+			L: lightness / 100,
+			C: s.Surfaces.chromaAt(lightness) + g.Over,
+			H: hue,
+		}.Fit()
+	}
+
+	c := at(g.Lightness)
+	if g.Clear == 0 {
+		return c, nil
+	}
+
+	against, ok := p.Surface(g.Against)
+	if !ok {
+		panic("palette: validate let a ground clear a surface that does not exist")
+	}
+
+	for l := g.Lightness; oklch.Difference(c, against.LCh) < g.Clear; {
+		if l >= ceiling {
+			return oklch.LCh{}, fmt.Errorf("no lightness under %g clears %q by %g", ceiling, g.Against, g.Clear)
+		}
+
+		l += riseStep
+		c = at(l)
+	}
+
+	return c, nil
+}
+
 func (r renditionSpec) at(hue float64) oklch.LCh {
 	l := r.Lightness / 100
 
@@ -292,4 +209,73 @@ func (r renditionSpec) at(hue float64) oklch.LCh {
 	}
 
 	return oklch.LCh{L: l, C: c, H: hue}
+}
+
+type spec struct {
+	Surfaces   surfacesSpec   `toml:"surfaces"`
+	Renditions renditionsSpec `toml:"renditions"`
+	Accents    []accentSpec   `toml:"accent"`
+}
+
+// surfacesSpec is the accent-free ladder. Chroma is the height of one curve
+// rather than a value per step, so a step says only how light it is.
+type surfacesSpec struct {
+	Hue    float64    `toml:"hue"`
+	Chroma float64    `toml:"chroma"`
+	Steps  []stepSpec `toml:"step"`
+}
+
+// chromaAt returns how much color the ladder carries at a lightness: the peak,
+// shaped by a squared sine.
+func (s *surfacesSpec) chromaAt(lightness float64) float64 {
+	sine := math.Sin(math.Pi * lightness / 100)
+
+	return s.Chroma * sine * sine
+}
+
+type stepSpec struct {
+	Name      string  `toml:"name"`
+	Lightness float64 `toml:"lightness"`
+	Note      string  `toml:"note"`
+}
+
+type renditionsSpec struct {
+	Text      renditionSpec `toml:"text"`
+	Deep      renditionSpec `toml:"deep"`
+	Wash      groundSpec    `toml:"wash"`
+	Container groundSpec    `toml:"container"`
+}
+
+// renditionSpec places one rendition. Chroma is a fraction of what sRGB can
+// show there, and Max caps it absolutely so the accents with room to spare do
+// not shout over the ones without. Zero means no cap.
+type renditionSpec struct {
+	Lightness float64 `toml:"lightness"`
+	Chroma    float64 `toml:"chroma"`
+	Max       float64 `toml:"max"`
+}
+
+// groundSpec places a tinted ground. Unlike a fill it is measured against the
+// surface beside it rather than against sRGB, so Over is how much more color it
+// carries than the plain ladder at that lightness.
+type groundSpec struct {
+	Lightness float64 `toml:"lightness"`
+	Over      float64 `toml:"over"`
+
+	// Clear is how far the ground must end up from the surface named in
+	// Against, as [oklch.Difference]. Chroma buys it first; Lightness rises
+	// only where sRGB has none left. Zero asks for nothing.
+	Clear   float64 `toml:"clear"`
+	Against string  `toml:"against"`
+}
+
+// accentSpec places one accent on the wheel. Lightness, when not zero,
+// overrides the text rendition's, and Why says what about sRGB or vision needs
+// it to.
+type accentSpec struct {
+	Name      string  `toml:"name"`
+	Hue       float64 `toml:"hue"`
+	Lightness float64 `toml:"lightness"`
+	Note      string  `toml:"note"`
+	Why       string  `toml:"why"`
 }
