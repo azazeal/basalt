@@ -166,7 +166,10 @@ func TestValidate(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	s := sound()
-	p := s.resolve()
+	p, err := s.resolve()
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
 
 	if got, want := len(p.Surfaces), len(s.Surfaces.Steps); got != want {
 		t.Fatalf("resolved %d surfaces, want %d", got, want)
@@ -221,7 +224,10 @@ func TestResolveClears(t *testing.T) {
 	s.Renditions.Wash.Clear, s.Renditions.Wash.Against = 0.12, "raised"
 	s.Renditions.Container.Clear, s.Renditions.Container.Against = 0.14, "raised"
 
-	p := s.resolve()
+	p, err := s.resolve()
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
 	raised, _ := p.Surface("raised")
 
 	for _, a := range p.Accents {
@@ -235,6 +241,16 @@ func TestResolveClears(t *testing.T) {
 	}
 }
 
+func TestResolveGivesUp(t *testing.T) {
+	// No lightness a ground could rise to puts it this far from the page.
+	s := sound()
+	s.Renditions.Wash.Clear, s.Renditions.Wash.Against = 1, "page"
+
+	if _, err := s.resolve(); err == nil {
+		t.Error("resolve placed a wash that cannot clear the page")
+	}
+}
+
 func TestResolveCapsChroma(t *testing.T) {
 	s := sound()
 
@@ -245,7 +261,10 @@ func TestResolveCapsChroma(t *testing.T) {
 		{Name: "magenta", Hue: 318},
 	}
 
-	p := s.resolve()
+	p, err := s.resolve()
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
 
 	magenta, _ := p.Accent("magenta")
 	if got, want := magenta.Text.LCh.C, s.Renditions.Text.Max; math.Abs(got-want) > 1e-9 {

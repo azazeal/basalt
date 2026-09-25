@@ -140,8 +140,8 @@ const (
 	// the lowest a ground could sit and still clear.
 	riseStep = 0.01
 
-	// ceiling stops the walk if a palette asks for a separation no lightness
-	// could buy. The furthest any accent has had to rise is three and a half.
+	// ceiling is as far as a ground rises before the palette is rejected for
+	// asking a separation no lightness could buy.
 	ceiling = 60.0
 )
 
@@ -149,7 +149,7 @@ const (
 // fits it to sRGB. Where it has been asked to clear a surface and does not, it
 // rises until it does. Hue is free and lightness is not, so it spends the least
 // lightness that works and most accents never move.
-func (s *spec) ground(g groundSpec, hue float64, p *Palette) oklch.LCh {
+func (s *spec) ground(g groundSpec, hue float64, p *Palette) (oklch.LCh, error) {
 	at := func(lightness float64) oklch.LCh {
 		return oklch.LCh{
 			L: lightness / 100,
@@ -160,7 +160,7 @@ func (s *spec) ground(g groundSpec, hue float64, p *Palette) oklch.LCh {
 
 	c := at(g.Lightness)
 	if g.Clear == 0 {
-		return c
+		return c, nil
 	}
 
 	against, ok := p.Surface(g.Against)
@@ -168,12 +168,16 @@ func (s *spec) ground(g groundSpec, hue float64, p *Palette) oklch.LCh {
 		panic("palette: validate let a ground clear a surface that does not exist")
 	}
 
-	for l := g.Lightness; l < ceiling && oklch.Difference(c, against.LCh) < g.Clear; {
+	for l := g.Lightness; oklch.Difference(c, against.LCh) < g.Clear; {
+		if l >= ceiling {
+			return oklch.LCh{}, fmt.Errorf("no lightness under %g clears %q by %g", ceiling, g.Against, g.Clear)
+		}
+
 		l += riseStep
 		c = at(l)
 	}
 
-	return c
+	return c, nil
 }
 
 // renditionSpec places one rendition. Chroma is a fraction of what sRGB can
@@ -216,10 +220,15 @@ func Load(path string) (*Palette, error) {
 		return nil, fmt.Errorf("palette: %s: %w", path, err)
 	}
 
-	return s.resolve(), nil
+	p, err := s.resolve()
+	if err != nil {
+		return nil, fmt.Errorf("palette: %s: %w", path, err)
+	}
+
+	return p, nil
 }
 
-func (s *spec) resolve() *Palette {
+func (s *spec) resolve() (*Palette, error) {
 	p := &Palette{
 		Surfaces: make([]Color, len(s.Surfaces.Steps)),
 		Accents:  make([]Accent, len(s.Accents)),
@@ -247,6 +256,16 @@ func (s *spec) resolve() *Palette {
 			text.Lightness = a.Lightness
 		}
 
+		wash, err := s.ground(s.Renditions.Wash, a.Hue, p)
+		if err != nil {
+			return nil, fmt.Errorf("accent %q's wash: %w", a.Name, err)
+		}
+
+		container, err := s.ground(s.Renditions.Container, a.Hue, p)
+		if err != nil {
+			return nil, fmt.Errorf("accent %q's container: %w", a.Name, err)
+		}
+
 		p.Accents[i] = Accent{
 			Name: a.Name,
 			Note: a.Note,
@@ -255,12 +274,12 @@ func (s *spec) resolve() *Palette {
 
 			Text:      Color{Name: a.Name, Note: a.Note, LCh: text.at(a.Hue)},
 			Deep:      Color{Name: a.Name, Note: a.Note, LCh: s.Renditions.Deep.at(a.Hue)},
-			Wash:      Color{Name: a.Name, Note: a.Note, LCh: s.ground(s.Renditions.Wash, a.Hue, p)},
-			Container: Color{Name: a.Name, Note: a.Note, LCh: s.ground(s.Renditions.Container, a.Hue, p)},
+			Wash:      Color{Name: a.Name, Note: a.Note, LCh: wash},
+			Container: Color{Name: a.Name, Note: a.Note, LCh: container},
 		}
 	}
 
-	return p
+	return p, nil
 }
 
 // at places the rendition on the wheel at the given hue.
