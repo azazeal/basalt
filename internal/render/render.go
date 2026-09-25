@@ -34,6 +34,10 @@ const (
 	statusBar = 28
 	sidebar   = 208
 
+	// where the tab strip and the file start, right of the tree
+	pane  = margin + sidebar
+	paneW = content - sidebar
+
 	mono = "ui-monospace, 'JetBrains Mono', 'DejaVu Sans Mono', Menlo, Consolas, monospace"
 	sans = "ui-sans-serif, system-ui, 'Inter', 'DejaVu Sans', sans-serif"
 )
@@ -394,8 +398,8 @@ func (s *sheet) window() {
 	s.heading("in a window", "the ladder doing the work a border would")
 
 	top := s.y
-	body := 13*lineHeight + 20
-	h := titleBar + tabStrip + body + statusBar
+	fileH := len(sample)*lineHeight + 20
+	h := titleBar + tabStrip + fileH + statusBar
 
 	// The window itself, clipped so the corners round the whole stack rather
 	// than each band of it.
@@ -403,8 +407,20 @@ func (s *sheet) window() {
 		margin, top, content, h)
 	s.buf.WriteString(`<g clip-path="url(#win)">`)
 
-	// The title bar, in the raised surface, with the three lights drawn in the
-	// theme's own accents rather than the ones a Mac would use.
+	s.titleBar(top)
+	s.tree(top+titleBar, tabStrip+fileH)
+	s.tabs(top + titleBar)
+	s.file(top+titleBar+tabStrip, fileH)
+	s.statusLine(top + titleBar + tabStrip + fileH)
+
+	s.buf.WriteString(`</g>`)
+
+	s.y = top + h + sectionGap
+}
+
+// titleBar draws the three lights in the theme's own accents rather than the
+// ones a Mac would use.
+func (s *sheet) titleBar(top int) {
 	s.rect(margin, top, content, titleBar, 0, s.hex("raised"))
 
 	for i, name := range []string{"red", "yellow", "green"} {
@@ -414,14 +430,15 @@ func (s *sheet) window() {
 
 	s.text(margin+content/2, top+titleBar/2+5, s.hex("dim"), "oklch.go — basalt",
 		size(12), anchor("middle"))
+}
 
-	// The tree, on the surface behind the page. No separator is drawn between
-	// it and the file: the step in the ladder is the separator, which is the
-	// claim the whole theme rests on.
-	inner := top + titleBar
-	s.rect(margin, inner, sidebar, tabStrip+body, 0, s.hex("sunk"))
+// tree draws the files on the surface behind the page. No separator is drawn
+// between it and the file: the step in the ladder is the separator, which is
+// the claim the whole theme rests on.
+func (s *sheet) tree(top, h int) {
+	s.rect(margin, top, sidebar, h, 0, s.hex("sunk"))
 
-	s.text(margin+30, inner+22, s.accentHex("magenta"), "basalt", size(12), weight("600"))
+	s.text(margin+30, top+22, s.accentHex("magenta"), "basalt", size(12), weight("600"))
 
 	// Depth is a number rather than spaces in the name: SVG collapses runs of
 	// whitespace unless asked not to, so an indent written into the string
@@ -448,7 +465,7 @@ func (s *sheet) window() {
 		const indent = 14
 
 		x := margin + 16 + f.depth*indent
-		y := inner + 46 + i*20
+		y := top + 46 + i*20
 
 		// One per level the row sits inside, in the step named for exactly
 		// this.
@@ -471,50 +488,25 @@ func (s *sheet) window() {
 
 		s.text(x+28, y, fill, f.name, size(11), family(mono))
 	}
+}
 
-	// The open tab lifts to the status line's surface, the rest stay on the
-	// tree's.
-	pane := margin + sidebar
-	paneW := content - sidebar
+// tabs lifts the open tab to the status line's surface and leaves the rest on
+// the tree's.
+func (s *sheet) tabs(top int) {
+	s.rect(pane, top, paneW, tabStrip, 0, s.hex("sunk"))
+	s.rect(pane, top, 110, tabStrip, 0, s.hex("raised"))
+	s.text(pane+16, top+20, s.hex("body"), "oklch.go", size(11), family(mono), weight("500"))
+	s.text(pane+130, top+20, s.hex("faint"), "palette.go", size(11), family(mono))
+	s.text(pane+228, top+20, s.accentHex("yellow"), "basalt.toml ●", size(11), family(mono))
+}
 
-	s.rect(pane, inner, paneW, tabStrip, 0, s.hex("sunk"))
-	s.rect(pane, inner, 110, tabStrip, 0, s.hex("raised"))
-	s.text(pane+16, inner+20, s.hex("body"), "oklch.go", size(11), family(mono), weight("500"))
-	s.text(pane+130, inner+20, s.hex("faint"), "palette.go", size(11), family(mono))
-	s.text(pane+228, inner+20, s.accentHex("yellow"), "basalt.toml ●", size(11), family(mono))
-
-	// The page.
-	code := inner + tabStrip
-	s.rect(pane, code, paneW, body, 0, s.hex("page"))
-
-	lines := [][]span{
-		{{text: "// Fit pulls a color back inside sRGB, dulling it", surface: "muted", italic: true}},
-		{{text: "// rather than shifting the hue it was asked for.", surface: "muted", italic: true}},
-		{{text: "func", accent: "magenta"}, {text: " (c ", surface: "body"}, {text: "LCh", accent: "yellow"},
-			{text: ") ", surface: "body"}, {text: "Fit", accent: "blue"}, {text: "() ", surface: "body"},
-			{text: "LCh", accent: "yellow"}, {text: " {", surface: "body"}},
-		{{text: "\tif", accent: "magenta"}, {text: " c.", surface: "body"}, {text: "RGB", accent: "blue"},
-			{text: "().", surface: "body"}, {text: "InGamut", accent: "blue"}, {text: "() {", surface: "body"}},
-		{{text: "\t\treturn", accent: "magenta"}, {text: " c", surface: "body"}},
-		{{text: "\t}", surface: "body"}},
-		{{text: "\tvar out ", surface: "body"}, {text: "LCh", accent: "yellow"}},
-		{{text: "\tc.C = ", surface: "body"}, {text: "oklch", accent: "yellow"}, {text: ".", surface: "body"},
-			{text: "MaxChroma", accent: "blue"}, {text: "(c.L, c.H)", surface: "body"}},
-		{{text: "\tconst", accent: "magenta"}, {text: " steps = ", surface: "body"},
-			{text: "50", accent: "orange"}, {text: "   ", surface: "body"},
-			{text: "// halvings", surface: "muted", italic: true}},
-		{{text: "\tname := ", surface: "body"}, {text: `"basalt"`, accent: "green"},
-			{text: " + ", surface: "body"}, {text: `"\n"`, accent: "cyan"}},
-		{{text: "\t", surface: "body"}, {text: "//go:embed", accent: "cyan"},
-			{text: " palette.toml", surface: "muted", italic: true}},
-		{{text: "\tif", accent: "magenta"}, {text: " err != ", surface: "body"}, {text: "nil", accent: "orange"},
-			{text: " { ", surface: "body"}, {text: "panic", accent: "red"}, {text: "(err) }", surface: "body"}},
-		{{text: "}", surface: "body"}},
-	}
+// file draws the page and the sample on it.
+func (s *sheet) file(top, h int) {
+	s.rect(pane, top, paneW, h, 0, s.hex("page"))
 
 	// The row the caret is on, one step up from the page.
 	const caret = 2
-	s.rect(pane, code+10+caret*lineHeight, paneW, lineHeight, 0, s.hex("row"))
+	s.rect(pane, top+10+caret*lineHeight, paneW, lineHeight, 0, s.hex("row"))
 
 	// What the wash is for: LCh is selected on the caret's line and its other
 	// copies in view are marked without being selected. The copies take a
@@ -533,12 +525,12 @@ func (s *sheet) window() {
 			continue
 		}
 
-		s.rect(pane+68+m.col*charWidth, code+10+m.line*lineHeight,
+		s.rect(pane+68+m.col*charWidth, top+10+m.line*lineHeight,
 			m.width*charWidth, lineHeight, 0, a.Wash.Hex())
 	}
 
-	for i, line := range lines {
-		y := code + 26 + i*lineHeight
+	for i, line := range sample {
+		y := top + 26 + i*lineHeight
 
 		fill, w := s.hex("faint"), "400"
 		if i == caret {
@@ -557,28 +549,52 @@ func (s *sheet) window() {
 	// window without being in the file.
 	const diag = 11
 
-	dy := code + 26 + diag*lineHeight
+	dy := top + 26 + diag*lineHeight
 	dx := pane + 68 + 7*charWidth
 
 	s.undercurl(dx, dy+4, 3*charWidth, s.accentHex("red"))
 
 	hint := pane + 68 + 35*charWidth
-	s.rect(hint-6, code+10+diag*lineHeight, 17*charWidth, lineHeight, 0, s.hex("inlay"))
+	s.rect(hint-6, top+10+diag*lineHeight, 17*charWidth, lineHeight, 0, s.hex("inlay"))
 	s.line(hint, dy, []span{{text: "undefined: err", accent: "red"}})
+}
 
-	// A mode block in the focus accent, the branch, then what the file is.
-	st := code + body
-	s.rect(margin, st, content, statusBar, 0, s.hex("raised"))
-	s.rect(margin, st, 76, statusBar, 0, s.accentHex("blue"))
-	s.text(margin+38, st+18, s.hex("sunk"), "NORMAL", size(11), family(mono),
+// statusLine draws a mode block in the focus accent, the branch, then what the
+// file is.
+func (s *sheet) statusLine(top int) {
+	s.rect(margin, top, content, statusBar, 0, s.hex("raised"))
+	s.rect(margin, top, 76, statusBar, 0, s.accentHex("blue"))
+	s.text(margin+38, top+18, s.hex("sunk"), "NORMAL", size(11), family(mono),
 		anchor("middle"), weight("700"))
-	s.text(margin+92, st+18, s.accentHex("orange"), "main ●", size(11), family(mono))
-	s.text(margin+content-16, st+18, s.hex("muted"), "go · utf-8 · 8:14", size(11),
+	s.text(margin+92, top+18, s.accentHex("orange"), "main ●", size(11), family(mono))
+	s.text(margin+content-16, top+18, s.hex("muted"), "go · utf-8 · 8:14", size(11),
 		family(mono), anchor("end"))
+}
 
-	s.buf.WriteString(`</g>`)
-
-	s.y = top + h + sectionGap
+// sample is the file the window shows.
+var sample = [][]span{
+	{{text: "// Fit pulls a color back inside sRGB, dulling it", surface: "muted", italic: true}},
+	{{text: "// rather than shifting the hue it was asked for.", surface: "muted", italic: true}},
+	{{text: "func", accent: "magenta"}, {text: " (c ", surface: "body"}, {text: "LCh", accent: "yellow"},
+		{text: ") ", surface: "body"}, {text: "Fit", accent: "blue"}, {text: "() ", surface: "body"},
+		{text: "LCh", accent: "yellow"}, {text: " {", surface: "body"}},
+	{{text: "\tif", accent: "magenta"}, {text: " c.", surface: "body"}, {text: "RGB", accent: "blue"},
+		{text: "().", surface: "body"}, {text: "InGamut", accent: "blue"}, {text: "() {", surface: "body"}},
+	{{text: "\t\treturn", accent: "magenta"}, {text: " c", surface: "body"}},
+	{{text: "\t}", surface: "body"}},
+	{{text: "\tvar out ", surface: "body"}, {text: "LCh", accent: "yellow"}},
+	{{text: "\tc.C = ", surface: "body"}, {text: "oklch", accent: "yellow"}, {text: ".", surface: "body"},
+		{text: "MaxChroma", accent: "blue"}, {text: "(c.L, c.H)", surface: "body"}},
+	{{text: "\tconst", accent: "magenta"}, {text: " steps = ", surface: "body"},
+		{text: "50", accent: "orange"}, {text: "   ", surface: "body"},
+		{text: "// halvings", surface: "muted", italic: true}},
+	{{text: "\tname := ", surface: "body"}, {text: `"basalt"`, accent: "green"},
+		{text: " + ", surface: "body"}, {text: `"\n"`, accent: "cyan"}},
+	{{text: "\t", surface: "body"}, {text: "//go:embed", accent: "cyan"},
+		{text: " palette.toml", surface: "muted", italic: true}},
+	{{text: "\tif", accent: "magenta"}, {text: " err != ", surface: "body"}, {text: "nil", accent: "orange"},
+		{text: " { ", surface: "body"}, {text: "panic", accent: "red"}, {text: "(err) }", surface: "body"}},
+	{{text: "}", surface: "body"}},
 }
 
 // modes draws an editor whose caret and selection change color per mode. Each
