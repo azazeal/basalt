@@ -2,15 +2,9 @@ name: CI
 
 on:
   push:
-    tags-ignore:
-      - "**"
     branches:
       - main
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
 
 permissions:
   contents: read
